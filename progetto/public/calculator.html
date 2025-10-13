@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <title>DC Calculator – Link personale</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/public/styles.css" />
+  <script defer src="/public/js/calc-core.js"></script>
+</head>
+<body>
+  <main class="container">
+    <h1>DC Calculator</h1>
+
+    <section class="card">
+      <div class="row" style="align-items:center">
+        <div>Token: <span id="tok" class="badge">—</span></div>
+        <div style="margin-left:10px">Tentativi rimanenti: <strong id="tentativi">—</strong></div>
+        <div id="netmsg" class="muted" style="margin-left:10px"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Aggiungi elemento</h2>
+      <form id="form-add" onsubmit="return false;">
+        <div class="row">
+          <div class="grow">
+            <label>Nome</label>
+            <input class="input" type="text" id="nome" placeholder="es. Riso" />
+          </div>
+          <div style="width:160px">
+            <label>Calorie</label>
+            <input class="input" type="number" id="fondi" min="0" placeholder="120" />
+          </div>
+          <div style="width:160px">
+            <label>Bisogno</label>
+            <input class="input" type="number" id="bisogno" min="0" placeholder="200" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="grow">
+            <label>Donatori (virgole)</label>
+            <input class="input" type="text" id="donatori" placeholder="Anna, Bob" />
+          </div>
+          <div class="grow">
+            <label>Range 1 (fac.)</label>
+            <input class="input" type="text" id="range1" placeholder="1-5 o 3" />
+          </div>
+          <div class="grow">
+            <label>Range 2 (fac.)</label>
+            <input class="input" type="text" id="range2" placeholder="10-20 o 12" />
+          </div>
+          <div class="grow">
+            <label>Range 3 (fac.)</label>
+            <input class="input" type="text" id="range3" placeholder="2-4 o 3" />
+          </div>
+          <div class="grow">
+            <label>Range 4 (fac.)</label>
+            <input class="input" type="text" id="range4" placeholder="5-8 o 6" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <button id="btn-add" type="button" class="btn-ghost">Aggiungi elemento</button>
+          <button id="btn-clear" type="button" class="btn btn-danger">Rimuovi tutti</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Elementi</h2>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Nome</th><th>Calorie</th><th>Bisogno</th><th>Donatori</th>
+            <th>R1</th><th>R2</th><th>R3</th><th>R4</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Calcolo sottoinsieme</h2>
+      <div class="row" style="align-items:center">
+        <div style="width:160px">
+          <label>k</label>
+          <input class="input" type="number" id="k" min="1" />
+        </div>
+        <button id="btn-calc" type="button" class="btn">Calcola</button>
+      </div>
+      <pre id="result" class="result" style="margin-top:10px"></pre>
+    </section>
+  </main>
+
+  <script>
+    const API = { attempts: "/api/attempts" };
+
+    const token = new URLSearchParams(location.search).get("t") || "";
+    const elTok = document.getElementById("tok");
+    const elTentativi = document.getElementById("tentativi");
+    const elTbody = document.getElementById("tbody");
+    const elResult = document.getElementById("result");
+    const netMsg = document.getElementById("netmsg");
+    const btnCalc = document.getElementById("btn-calc");
+
+    elTok.textContent = token || "—";
+    if (!token) {
+      netMsg.textContent = "Apri questa pagina dal link ricevuto via email (token mancante).";
+      btnCalc.disabled = true;
+    }
+
+    const elementi = {};
+    const normalizeName = (s) => String(s || "").trim().toLowerCase();
+    const getDisplayName = (k) => elementi[k]?.displayName || k;
+
+    async function attempts(action){
+      if(!token) throw new Error("Token mancante. Usa un link valido.");
+      const res = await fetch(API.attempts, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ action, token })
+      });
+      if(!res.ok){
+        let msg='Errore API'; try{ const j=await res.json(); msg=j.error||msg; }catch{}
+        throw new Error(msg);
+      }
+      return res.json(); // { remaining }
+    }
+
+    async function refreshAttempts(){
+      try{
+        const { remaining } = await attempts('status');
+        elTentativi.textContent = remaining;
+        btnCalc.disabled = remaining <= 0;
+        netMsg.textContent = '';
+      }catch(e){
+        elTentativi.textContent = '—';
+        btnCalc.disabled = true;
+        netMsg.textContent = e.message;
+      }
+    }
+
+    function renderTabella(){
+      elTbody.innerHTML = "";
+      const entries = Object.entries(elementi);
+      if(entries.length===0){
+        const tr=document.createElement("tr"); const td=document.createElement("td");
+        td.colSpan=9; td.textContent="Nessun elemento aggiunto."; td.className="helper";
+        tr.appendChild(td); elTbody.appendChild(tr); return;
+      }
+      for(const [key,data] of entries){
+        const tr=document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(data.displayName)}</td>
+          <td>${data.fondi}</td>
+          <td>${data.bisogno}</td>
+          <td>${(data.possibili_donatori_display||[]).map(escapeHtml).join(", ")}</td>
+          <td>${formatRange(data.range1)}</td>
+          <td>${formatRange(data.range2)}</td>
+          <td>${formatRange(data.range3)}</td>
+          <td>${formatRange(data.range4)}</td>
+          <td></td>`;
+        const tdAzioni=tr.lastElementChild;
+        const btnDel=document.createElement("button");
+        btnDel.textContent="Rimuovi"; btnDel.className="btn-ghost"; btnDel.onclick=()=>{ delete elementi[key]; renderTabella(); };
+        tdAzioni.appendChild(btnDel);
+        elTbody.appendChild(tr);
+      }
+    }
+
+    document.getElementById("btn-add").addEventListener("click", () => {
+      const nomeRaw = document.getElementById("nome").value;
+      const nomeKey = normalizeName(nomeRaw);
+      const fondi = parseInt(document.getElementById("fondi").value,10);
+      const bisogno = parseInt(document.getElementById("bisogno").value,10);
+      const donatoriRaw = document.getElementById("donatori").value;
+      const range1Raw = document.getElementById("range1").value;
+      const range2Raw = document.getElementById("range2").value;
+      const range3Raw = document.getElementById("range3").value;
+      const range4Raw = document.getElementById("range4").value;
+
+      if(!nomeKey || Number.isNaN(fondi) || Number.isNaN(bisogno) || fondi<0 || bisogno<0){
+        alert("Compila correttamente i campi (Nome non vuoto, Calorie/Bisogno interi >= 0)."); return;
+      }
+      const donDisp = donatoriRaw.split(",").map(s=>s.trim()).filter(Boolean);
+      const donKeys = Array.from(new Set(donDisp.map(s => s.trim().toLowerCase()).filter(Boolean)));
+
+      let r1,r2,r3,r4;
+      try{
+        r1=parseRange(range1Raw);
+        r2=parseRange(range2Raw);
+        r3=parseRange(range3Raw);
+        r4=parseRange(range4Raw);
+      }catch(e){ alert(e.message); return; }
+
+      elementi[nomeKey] = {
+        displayName:nomeRaw.trim(), fondi, bisogno,
+        possibili_donatori:donKeys, possibili_donatori_display:donDisp,
+        range1:r1, range2:r2, range3:r3, range4:r4
+      };
+      document.getElementById("form-add").reset();
+      renderTabella();
+    });
+
+    document.getElementById("btn-clear").addEventListener("click", () => {
+      if(!confirm("Sei sicuro di voler rimuovere tutti gli elementi?")) return;
+      for(const k of Object.keys(elementi)) delete elementi[k];
+      renderTabella();
+    });
+
+    document.getElementById("btn-calc").addEventListener("click", async () => {
+      try{
+        const kVal = parseInt(document.getElementById("k").value,10);
+        if(Number.isNaN(kVal) || kVal<1){ alert("Inserisci un numero intero positivo per k."); return; }
+
+        elResult.textContent = "Verifica tentativi...";
+        const { remaining } = await attempts('consume'); // scala 1 sul server
+        elTentativi.textContent = remaining;
+        btnCalc.disabled = remaining <= 0;
+
+        elResult.textContent = "Calcolo in corso...";
+        const esito = trovaSottoinsieme(elementi, kVal);
+        if(esito){
+          const { combo, risultato } = esito;
+          let text = `Trovato un sottoinsieme valido: ${combo.map(k => getDisplayName(k)).join(", ")}\n\n`;
+          text += "--- Dettaglio Contributi ---\n";
+          for(const [personaKey, allocazioni] of Object.entries(risultato)){
+            text += `${getDisplayName(personaKey)}:\n`;
+            for(const [donatoreKey, importo] of allocazioni){
+              text += `  ${getDisplayName(donatoreKey)} ha dato ${importo}\n`;
+            }
+          }
+          elResult.textContent = text;
+        } else {
+          elResult.textContent = "Nessun sottoinsieme valido trovato (vincoli range o bisogni non soddisfatti).";
+        }
+      }catch(e){
+        elResult.textContent = `Errore: ${e.message}`;
+      }
+    });
+
+    // Init
+    renderTabella();
+    refreshAttempts();
+    elResult.textContent = token ? "Inserisci elementi e premi Calcola." : "Token mancante. Usa un link valido.";
+  </script>
+</body>
+</html>

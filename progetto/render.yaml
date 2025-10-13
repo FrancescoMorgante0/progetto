@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: dc-calculator
+    env: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /
+    envVars:
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        sync: false
+      - key: REPLY_TO
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: "https://<nome-servizio>.onrender.com"
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: TOKEN_TTL_SECONDS
+        value: "2592000"
+      - key: ADMIN_API_KEY
+        sync: false
