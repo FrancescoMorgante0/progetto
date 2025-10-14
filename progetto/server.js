@@ -16,7 +16,47 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+// DEBUG START: middleware per body JSON e logging leggero delle API
+app.use(express.json());
 
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    const ct = req.headers['content-type'] || '-';
+    // Non loggare segreti: qui solo info generiche
+    console.log(`[api] ${req.method} ${req.path} ct=${ct} body=`, req.body);
+  }
+  next();
+});
+// DEBUG END
+
+// ...altre configurazioni/app.use statici ecc.
+
+// Esempio di rotta: sostituisci questo blocco a quella esistente mantenendo la tua logica
+app.post('/api/create-checkout-session', async (req, res) => {
+  try {
+    // Usa la tua logica per costruire line_items/success_url/cancel_url
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: [{ price: process.env.PRICE_STANDARD_ID, quantity: 1 }],
+      success_url: `${process.env.PUBLIC_BASE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.PUBLIC_BASE_URL}/cancel.html`,
+    });
+
+    console.log('[stripe] session created', { id: session.id });
+    return res.status(200).json({ id: session.id });
+  } catch (err) {
+    const se = {
+      message: err?.message,
+      type: err?.type,
+      code: err?.code,
+      param: err?.param,
+      requestId: err?.raw?.requestId,
+      statusCode: err?.statusCode,
+    };
+    console.error('[stripe] create session FAILED', se, { body: req.body });
+    return res.status(err?.statusCode || 500).json({ ok: false, error: se });
+  }
+});
 /**
  * 1) Webhook Stripe (PRIMA dei body parser; usa raw body)
  */
