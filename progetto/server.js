@@ -158,9 +158,9 @@ async function consumeAttempt(token) {
  * 5) Prezzi Stripe (EUR) – Sostituisci con i tuoi Price ID "price_..."
  */
 const PRICES = {
-  "1": "price_xxx_eur_1",   // €30
-  "3": "price_xxx_eur_3",   // €50
-  "10": "price_xxx_eur_10"  // €100
+  "1": "prod_TD392UBI1d9WYT",   // €30
+  "3": "prod_TD3NUk7SGePMeF",   // €50
+  "10": "prod_TD3OlSLSplG7IE"  // €100
 };
 
 /**
