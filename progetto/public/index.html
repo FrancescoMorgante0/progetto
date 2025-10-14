@@ -268,5 +268,61 @@ document.getElementById('payButton').addEventListener('click', (e) => {
   procediAlPagamento();
 });
 </script>
+  <script>
+async function procediAlPagamento() {
+  try {
+    const resp = await fetch('/api/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: 'standard', promoCode: '' }) // adatta ai tuoi campi
+    });
+
+    const raw = await resp.text();        // leggi come testo
+    let data = null;
+    try { data = JSON.parse(raw); } catch (e) {}  // prova a parsare JSON
+
+    if (!resp.ok) {
+      // Estrai il messaggio migliore possibile
+      const msg =
+        data?.error?.message ||
+        data?.message ||
+        raw ||                                // se non è JSON, mostra il testo grezzo
+        'Errore nella creazione della sessione di pagamento';
+
+      const details = [
+        data?.error?.type && `type=${data.error.type}`,
+        data?.error?.code && `code=${data.error.code}`,
+        data?.error?.param && `param=${data.error.param}`,
+        data?.error?.requestId && `requestId=${data.error.requestId}`,
+        `status=${resp.status}`
+      ].filter(Boolean).join(' | ');
+
+      console.error('Checkout error', { status: resp.status, data: data ?? raw });
+      alert(`${msg}${details ? '\n' + details : ''}`);
+      return;
+    }
+
+    // OK → reindirizza a Stripe Checkout
+    const sessionId = data?.id;
+    if (!sessionId) {
+      alert('Risposta inattesa dal server (manca sessionId)');
+      console.error('Unexpected response', data);
+      return;
+    }
+    const stripe = Stripe(window.publicConfig.stripePk);
+    await stripe.redirectToCheckout({ sessionId });
+  } catch (e) {
+    // errori di rete/JS
+    console.error('Network/JS error', e);
+    alert(`Errore di rete: ${e?.message || e}`);
+  }
+}
+
+// associa al bottone
+document.getElementById('payButton')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  procediAlPagamento();
+});
+</script>
 </body>
 </html>
