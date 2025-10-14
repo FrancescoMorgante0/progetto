@@ -208,9 +208,9 @@ async function consumeAttempt(token) {
     "1": "price_abc123..."   // 1 tentativo/pacchetto
 */
 const PRICES = {
-  "1": "prod_TD392UBI1d9WYT",   // €30  (placeholder)
-  "3": "prod_TD3NUk7SGePMeF",   // €50
-  "10": "prod_TD3OlSLSplG7IE", // €100
+  "1": "price_1SGd2uFb9AZszxVCwrlU2Ooh",   // €30  (placeholder)
+  "3": "price_1SGdGIFb9AZszxVCpQyNIX3jF",   // €50
+  "10": "price_1SGdHdFb9AZszxVCidfbEB4b", // €100
 };
 
 /* ------------------------ 7. CONFIG PUBBLICA (PK) ------------------------ */
