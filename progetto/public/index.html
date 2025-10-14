@@ -231,5 +231,42 @@
       }
     });
   </script>
+  <!-- ...il resto della tua pagina... -->
+
+<script>
+async function procediAlPagamento() {
+  const resp = await fetch('/api/create-checkout-session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan: 'standard', promoCode: '' }) // adatta ai tuoi campi reali
+  });
+
+  let data = {};
+  try { data = await resp.json(); } catch (e) {}
+
+  if (!resp.ok) {
+    console.error('Checkout error', data);
+    const msg = data?.error?.message || 'Errore nella creazione della sessione di pagamento';
+    const details = [
+      data?.error?.type && `type: ${data.error.type}`,
+      data?.error?.code && `code: ${data.error.code}`,
+      data?.error?.param && `param: ${data.error.param}`,
+      data?.error?.requestId && `requestId: ${data.error.requestId}`,
+    ].filter(Boolean).join(' | ');
+    alert(`${msg}${details ? ' [' + details + ']' : ''}`);
+    return;
+  }
+
+  const sessionId = data.id;
+  const stripe = Stripe(window.publicConfig.stripePk); // o come lo inizializzi nel tuo progetto
+  await stripe.redirectToCheckout({ sessionId });
+}
+
+// Collega la funzione al bottone, ad esempio:
+document.getElementById('payButton').addEventListener('click', (e) => {
+  e.preventDefault();
+  procediAlPagamento();
+});
+</script>
 </body>
 </html>
