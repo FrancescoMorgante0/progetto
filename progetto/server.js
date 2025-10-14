@@ -317,3 +317,39 @@ const port = process.env.PORT || 4242;
 app.listen(port, () => {
   console.log(`Server attivo su ${process.env.PUBLIC_BASE_URL || `http://localhost:${port}`}`);
 });
+// Assicurati questo prima delle rotte:
+app.use(express.json());
+
+// ...le tue altre app.use / rotte
+
+app.post('/api/create-checkout-session', async (req, res) => {
+  try {
+    // la tua logica esistente per creare la sessione
+    const session = await stripe.checkout.sessions.create({
+      // ...
+    });
+    return res.status(200).json({ id: session.id });
+  } catch (err) {
+    const payload = {
+      message: err?.message || 'Stripe error',
+      type: err?.type,
+      code: err?.code,
+      param: err?.param,
+      requestId: err?.raw?.requestId,
+      statusCode: err?.statusCode || 500
+    };
+    console.error('[stripe] create session FAILED', payload, { body: req.body });
+    return res.status(payload.statusCode).json({ ok: false, error: payload });
+  }
+});
+
+// (opzionale ma utile) middleware di errore globale
+app.use((err, req, res, next) => {
+  const status = err?.status || err?.statusCode || 500;
+  const payload = {
+    message: err?.message || 'Server error',
+    statusCode: status
+  };
+  console.error('[global-error]', payload);
+  res.status(status).json({ ok: false, error: payload });
+});
