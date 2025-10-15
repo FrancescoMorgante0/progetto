@@ -5,18 +5,25 @@ import dotenv from "dotenv";
 import Stripe from "stripe";
 import { Resend } from "resend";
 import { v4 as uuidv4 } from "uuid";
-import fetch from "node-fetch";
 
+// Usa dotenv
 dotenv.config();
 
 const app = express();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// Usa fetch nativo di Node 18+/20. Se non presente, carica dinamicamente node-fetch.
+let fetchHttp = global.fetch;
+if (!fetchHttp) {
+  const mod = await import("node-fetch");
+  fetchHttp = mod.default;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/* ------------------------ 1. VALIDAZIONE ENV MINIMA ------------------------ */
+/* ------------------------ 1) VALIDAZIONE ENV ------------------------ */
 [
   "STRIPE_SECRET_KEY",
   "STRIPE_PUBLISHABLE_KEY",
@@ -28,13 +35,13 @@ const __dirname = path.dirname(__filename);
   if (!process.env[k]) console.warn("[env] Manca", k);
 });
 
-/* ------------------------ 2. UPSTASH REDIS (REST) ------------------------ */
+/* ------------------------ 2) UPSTASH (REST) ------------------------ */
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const TOKEN_TTL_SECONDS = Number(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30);
 
 async function redisCommand(...args) {
-  const r = await fetch(UPSTASH_URL, {
+  const r = await fetchHttp(UPSTASH_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${UPSTASH_TOKEN}`,
@@ -47,7 +54,6 @@ async function redisCommand(...args) {
   return j; // { result: ... }
 }
 
-// Helpers
 const getAttemptsKey = (token) => `token:${token}:attempts`;
 const getMetaKey = (token) => `token:${token}:meta`;
 
@@ -81,14 +87,13 @@ async function trackPromoUsage(code, data) {
   await redisCommand("LTRIM", `promo:${code}:uses`, "0", "99");
 }
 
-/* ------------------------ 3. WEBHOOK (PRIMA dei parser JSON!) ------------------------ */
+/* ------------------------ 3) WEBHOOK (PRIMA DEI PARSER!) ------------------------ */
 app.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   const sig = req.headers["stripe-signature"];
   let event;
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    // Diagnostica utile per capire se il body è raw
     console.error("Webhook signature error:", err?.message || err);
     console.error("Diag:", {
       hasSigHeader: Boolean(sig),
@@ -101,24 +106,19 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
 
-    // Se già gestito in passato → esci
+    // Evita doppi invii
     try {
       const already = await redisCommand("GET", `stripe:handled:${session.id}`);
-      if (already?.result) {
-        return res.json({ received: true, duplicate: true });
-      }
+      if (already?.result) return res.json({ received: true, duplicate: true });
     } catch (e) {
-      console.warn("Handled check error (continuo comunque):", e?.message || e);
+      console.warn("Handled check error:", e?.message || e);
     }
 
-    // Lock anti-concorrenza
+    // Lock
     const lockKey = `stripe:processing:${session.id}`;
     const lock = await redisCommand("SET", lockKey, "1", "NX", "EX", "300");
-    if (lock.result !== "OK") {
-      return res.json({ received: true, processing: true });
-    }
+    if (lock.result !== "OK") return res.json({ received: true, processing: true });
 
-    // Email destinatario con fallback
     const email =
       session?.metadata?.email ||
       session?.customer_details?.email ||
@@ -128,18 +128,18 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
 
     try {
       if (!email) {
-        console.error("Webhook: email mancante nella sessione", { sessionId: session.id });
+        console.error("Webhook: email mancante", { sessionId: session.id });
         await redisCommand("DEL", lockKey);
         return res.status(500).send("Email assente in sessione");
       }
 
-      // Genera token e salva con TTL
+      // Token + TTL
       const token = uuidv4();
       const ttl = String(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30);
       await redisCommand("SET", `token:${token}:meta`, JSON.stringify({ email, createdAt: Date.now() }), "EX", ttl);
       await redisCommand("SET", `token:${token}:attempts`, String(attempts), "EX", ttl);
 
-      // Tracking sconti (best effort, non blocca)
+      // Tracking sconti
       try {
         const sess = await stripe.checkout.sessions.retrieve(session.id, { expand: ["total_details.breakdown.discounts"] });
         const breakdown = sess.total_details?.breakdown?.discounts || [];
@@ -163,7 +163,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
         console.error("Promo tracking error:", e?.message || e);
       }
 
-      // Invia email
+      // Invio email
       const from = process.env.RESEND_FROM || "onboarding@resend.dev";
       const replyTo = process.env.REPLY_TO || undefined;
       const link = `${process.env.PUBLIC_BASE_URL}/public/calculator.html?t=${token}`;
@@ -180,11 +180,10 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
         });
       } catch (sendErr) {
         console.error("Errore invio email Resend:", sendErr?.message || sendErr);
-        await redisCommand("DEL", lockKey); // consenti retry da Stripe
+        await redisCommand("DEL", lockKey);
         return res.status(502).send("Email sending failed");
       }
 
-      // Marca come gestito SOLO dopo invio email riuscito
       await redisCommand("SET", `stripe:handled:${session.id}`, "1", "EX", "2592000");
       await redisCommand("DEL", lockKey);
       return res.json({ received: true, emailed: true });
@@ -195,11 +194,10 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
     }
   }
 
-  // Altri eventi: ack veloce
   return res.json({ received: true });
 });
 
-/* ------------------------ 4. PARSER E LOGGING ------------------------ */
+/* ------------------------ 4) PARSER E LOGGING ------------------------ */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -210,23 +208,23 @@ app.use((req, res, next) => {
   next();
 });
 
-/* ------------------------ 5. STATICI ------------------------ */
+/* ------------------------ 5) STATICI ------------------------ */
 app.use("/public", express.static(path.join(__dirname, "public"), { index: false }));
 app.get("/", (_, res) => res.redirect("/public/index.html"));
 
-/* ------------------------ 6. PRICE IDs (TEST price_...) ------------------------ */
+/* ------------------------ 6) PRICE IDs (TEST) ------------------------ */
 const PRICES = {
   "1": "price_1SGd2uFb9AZszxVCwrlU2Ooh",
   "3": "price_1SGdGIFb9AZszxVCpQyNIX3jF",
   "10": "price_1SGdHdFb9AZszxVCidfbEB4b",
 };
 
-/* ------------------------ 7. CONFIG PUBBLICA (PK) ------------------------ */
+/* ------------------------ 7) PUBBLICA CONFIG ------------------------ */
 app.get("/api/public-config", (req, res) => {
   res.json({ stripePk: process.env.STRIPE_PUBLISHABLE_KEY || "" });
 });
 
-/* ------------------------ 8. PROMO CODE LOOKUP ------------------------ */
+/* ------------------------ 8) PROMO LOOKUP ------------------------ */
 async function findPromotionCodeId(code) {
   if (!code) return null;
   const cleaned = String(code).trim();
@@ -235,12 +233,10 @@ async function findPromotionCodeId(code) {
   return list.data?.[0]?.id || null;
 }
 
-/* ------------------------ 9. CREATE CHECKOUT SESSION ------------------------ */
+/* ------------------------ 9) CHECKOUT SESSION ------------------------ */
 app.post("/api/create-checkout-session", async (req, res) => {
   const { email, pkg, promoCode } = req.body || {};
-  if (!email || !PRICES[pkg]) {
-    return res.status(400).json({ error: "Parametri non validi" });
-  }
+  if (!email || !PRICES[pkg]) return res.status(400).json({ error: "Parametri non validi" });
   const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   if (!isEmail) return res.status(400).json({ error: "Email non valida" });
 
@@ -253,14 +249,12 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const discounts = [];
     if (promoCode && String(promoCode).trim()) {
       const promoId = await findPromotionCodeId(promoCode);
-      if (!promoId) {
-        return res.status(400).json({ error: "Codice sconto non valido o non attivo" });
-      }
+      if (!promoId) return res.status(400).json({ error: "Codice sconto non valido o non attivo" });
       discounts.push({ promotion_code: promoId });
     }
 
     const session = await stripe.checkout.sessions.create({
-      mode: "payment", // se ricorrente: 'subscription'
+      mode: "payment",
       payment_method_types: ["card"],
       customer_email: email,
       line_items: [{ price: priceId, quantity: 1 }],
@@ -287,7 +281,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
   }
 });
 
-/* ------------------------ 10. API TENTATIVI ------------------------ */
+/* ------------------------ 10) API TENTATIVI ------------------------ */
 app.post("/api/attempts", async (req, res) => {
   const { action, token } = req.body || {};
   if (!token) return res.status(400).json({ error: "Token mancante" });
@@ -304,7 +298,7 @@ app.post("/api/attempts", async (req, res) => {
   return res.status(400).json({ error: "Azione non valida" });
 });
 
-/* ------------------------ 11. ADMIN PROMO USAGE ------------------------ */
+/* ------------------------ 11) ADMIN PROMO USAGE ------------------------ */
 app.get("/api/promo-usage", async (req, res) => {
   const adminKey = req.headers["x-admin-key"];
   if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
@@ -319,7 +313,7 @@ app.get("/api/promo-usage", async (req, res) => {
   res.json({ code, count: Number(count.result || 0), recent: list });
 });
 
-/* ------------------------ 12. TEST EMAIL (facoltativo) ------------------------ */
+/* ------------------------ 12) TEST EMAIL ------------------------ */
 app.post("/api/test-email", async (req, res) => {
   try {
     const to = req.body?.to || process.env.TEST_EMAIL_TO;
@@ -341,16 +335,12 @@ app.post("/api/test-email", async (req, res) => {
   }
 });
 
-/* ------------------------ 13. HANDLER ERRORE GLOBALE ------------------------ */
-app.use((err, req, res, next) => {
-  const status = err?.status || err?.statusCode || 500;
-  const payload = { message: err?.message || "Server error", statusCode: status };
-  console.error("[global-error]", payload);
-  res.status(status).json({ ok: false, error: payload });
-});
+/* ------------------------ 13) HEALTHCHECK ------------------------ */
+app.get("/health", (req, res) => res.status(200).json({ ok: true }));
 
-/* ------------------------ 14. AVVIO ------------------------ */
+/* ------------------------ 14) AVVIO ------------------------ */
 const port = process.env.PORT || 4242;
 app.listen(port, () => {
+  console.log(`[boot] Node ${process.version} listening on ${port}`);
   console.log(`Server attivo su ${process.env.PUBLIC_BASE_URL || `http://localhost:${port}`}`);
 });
