@@ -177,7 +177,7 @@ app.post(
       // Email con link
       const link = `${process.env.PUBLIC_BASE_URL}/public/calculator.html?t=${token}`;
       // NOTA: il from deve essere un indirizzo verificato su Resend (es. info@mail.tuodominio.com)
-      const from = process.env.RESEND_FROM || "mail.psgecosystem.com"; 
+      const from = process.env.RESEND_FROM || "noreply@mail.psgecosystem.com"; 
       const replyTo = process.env.REPLY_TO; // Correggiamo la gestione di replyTo (se undefined, non viene aggiunto)
 
       try {
