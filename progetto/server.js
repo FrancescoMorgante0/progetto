@@ -38,30 +38,68 @@ async function compatFetch(...args) {
   return f(...args);
 }
 
-/* ------------------------ 3) UPSTASH (REST) ------------------------ */
-const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
+/* ------------------------ 3) UPSTASH (REST) - compat a più formati ------------------------ */
+const UPSTASH_URL_RAW = (process.env.UPSTASH_REDIS_REST_URL || "").replace(/\/+$/, "");
+const UPSTASH_URL = UPSTASH_URL_RAW; // senza trailing slash
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const TOKEN_TTL_SECONDS = Number(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30);
 
-// Formato corretto per Upstash REST: { command: "SET", args: ["k","v","EX","60"] }
+// Prova i 3 formati: POST [array] -> POST {command,args} -> GET /CMD/args...
 async function redisCommand(...args) {
   if (!UPSTASH_URL || !UPSTASH_TOKEN) throw new Error("Upstash URL/TOKEN mancanti");
   if (!args.length) throw new Error("redisCommand: nessun argomento");
 
-  const [cmd, ...rest] = args.map((a) => (a === undefined || a === null ? "" : String(a)));
-  const resp = await compatFetch(UPSTASH_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${UPSTASH_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ command: cmd, args: rest }),
-  });
-  const json = await resp.json().catch(() => ({}));
-  if (!resp.ok || json?.error) {
-    throw new Error(`Upstash error ${resp.status}: ${JSON.stringify(json)}`);
+  const cmd = String(args[0] ?? "");
+  const rest = args.slice(1).map((a) => (a === undefined || a === null ? "" : String(a)));
+
+  const headers = {
+    Authorization: `Bearer ${UPSTASH_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+
+  // 1) POST con body array root: ["SET","k","v","EX","60"]
+  try {
+    const resp1 = await compatFetch(UPSTASH_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify([cmd, ...rest]),
+    });
+    const text1 = await resp1.text();
+    let json1;
+    try { json1 = JSON.parse(text1); } catch { json1 = { raw: text1 }; }
+    if (resp1.ok && !json1?.error) return json1;
+    throw new Error(`POST-array failed: ${resp1.status} ${text1}`);
+  } catch (e1) {
+    // 2) POST con body object: {command:"SET", args:["k","v","EX","60"]}
+    try {
+      const resp2 = await compatFetch(UPSTASH_URL, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ command: cmd, args: rest }),
+      });
+      const text2 = await resp2.text();
+      let json2;
+      try { json2 = JSON.parse(text2); } catch { json2 = { raw: text2 }; }
+      if (resp2.ok && !json2?.error) return json2;
+      throw new Error(`POST-object failed: ${resp2.status} ${text2}`);
+    } catch (e2) {
+      // 3) GET stile path: /SET/k/v/EX/60
+      try {
+        const path = [cmd, ...rest].map(encodeURIComponent).join("/");
+        const resp3 = await compatFetch(`${UPSTASH_URL}/${path}`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+        });
+        const text3 = await resp3.text();
+        let json3;
+        try { json3 = JSON.parse(text3); } catch { json3 = { raw: text3 }; }
+        if (resp3.ok && !json3?.error) return json3;
+        throw new Error(`GET-path failed: ${resp3.status} ${text3}`);
+      } catch (e3) {
+        throw new Error(`Upstash all formats failed: ${e1?.message} | ${e2?.message} | ${e3?.message}`);
+      }
+    }
   }
-  return json; // { result: ... }
 }
 
 const getAttemptsKey = (token) => `token:${token}:attempts`;
@@ -97,11 +135,11 @@ async function trackPromoUsage(code, data) {
   await redisCommand("LTRIM", `promo:${code}:uses`, "0", "99");
 }
 
-/* ------------------------ 4) Helper firma: supporto 1 o 2 segreti ------------------------ */
+/* ------------------------ 4) Helper firma: 1 o 2 segreti ------------------------ */
 function constructEventWithSecrets(req, sig) {
   const secrets = [
-    process.env.STRIPE_WEBHOOK_SECRET,        // consigliato: unico endpoint
-    process.env.STRIPE_WEBHOOK_SECRET_ALT,    // opzionale finché non disattivi endpoint duplici
+    process.env.STRIPE_WEBHOOK_SECRET,        // unico endpoint consigliato
+    process.env.STRIPE_WEBHOOK_SECRET_ALT,    // opzionale finché non disattivi i duplicati
   ].filter(Boolean);
 
   let lastErr = null;
@@ -136,29 +174,30 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // ACK immediato per evitare 502/timeout
+  // ACK immediato per eliminare 502/timeout
   if (event.type === "checkout.session.completed") {
     res.status(200).send("OK");
 
     setImmediate(async () => {
       let session = event.data.object;
 
-      // Se payload "thin", recupera la sessione completa
+      // Se payload è "thin", fai retrieve per ottenere email/metadata
       if (!session?.metadata?.email && !session?.customer_details?.email && !session?.customer_email) {
         try {
-          const s = await stripe.checkout.sessions.retrieve(session.id, {
+          session = await stripe.checkout.sessions.retrieve(session.id, {
             expand: ["customer_details", "total_details.breakdown.discounts"],
           });
-          session = s;
         } catch (e) {
           console.error("Retrieve session for thin payload failed:", e?.message || e);
         }
       }
 
       try {
+        // idempotenza
         const already = await redisCommand("GET", `stripe:handled:${session.id}`);
         if (already?.result) return;
 
+        // lock
         const lockKey = `stripe:processing:${session.id}`;
         const lock = await redisCommand("SET", lockKey, "1", "NX", "EX", "300");
         if (lock.result !== "OK") return;
@@ -176,16 +215,15 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
           return;
         }
 
+        // token + TTL
         const token = uuidv4();
         const ttl = String(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30);
         await redisCommand("SET", `token:${token}:meta`, JSON.stringify({ email, createdAt: Date.now() }), "EX", ttl);
         await redisCommand("SET", `token:${token}:attempts`, String(attempts), "EX", ttl);
 
-        // Tracking sconti (best-effort)
+        // tracking sconti (best-effort)
         try {
-          const sess = await stripe.checkout.sessions.retrieve(session.id, {
-            expand: ["total_details.breakdown.discounts"],
-          });
+          const sess = await stripe.checkout.sessions.retrieve(session.id, { expand: ["total_details.breakdown.discounts"] });
           const breakdown = sess.total_details?.breakdown?.discounts || [];
           for (const d of breakdown) {
             const promoId = d.discount?.promotion_code;
@@ -207,6 +245,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
           console.error("Promo tracking error:", e?.message || e);
         }
 
+        // invio email
         const from = process.env.RESEND_FROM || "onboarding@resend.dev";
         const replyTo = process.env.REPLY_TO || undefined;
         const link = `${process.env.PUBLIC_BASE_URL}/public/calculator.html?t=${token}`;
@@ -254,6 +293,16 @@ app.use((req, res, next) => {
 });
 
 /* ------------------------ 7) ENDPOINT TEST UPSTASH ------------------------ */
+app.get("/api/kv-ping", async (req, res) => {
+  try {
+    const pong = await redisCommand("PING");
+    res.json({ ok: true, pong });
+  } catch (e) {
+    console.error("[kv-ping] error:", e?.message || e);
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
 app.get("/api/kv-test", async (req, res) => {
   try {
     const k = "kv:test:ping";
