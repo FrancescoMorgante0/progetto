@@ -102,13 +102,17 @@ app.post(
       // Email con link
       const link = `${process.env.PUBLIC_BASE_URL}/public/calculator.html?t=${token}`;
       const from = process.env.RESEND_FROM || "mail.psgecosystem.com";
+      // ...
       const replyTo = process.env.REPLY_TO || undefined;
       try {
+        // ...
         await resend.emails.send({
           from: `DC Calculator <${from}>`,
           to: email,
+          //...
           replyTo,
           subject: "Il tuo link al calcolatore",
+          // ...
           html: `<p>Ciao! Ecco il tuo link personale al calcolatore:</p>
                  <p><a href="${link}">${link}</a></p>
                  <p>Tentativi disponibili: <strong>${attempts}</strong></p>`,
