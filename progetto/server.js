@@ -16,7 +16,82 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/* ------------------------ 1. WEBHOOK (prima dei parser JSON) ------------------------ */
+/* ------------------------ 1. VALIDAZIONE ENV MINIMA ------------------------ */
+// Spostato qui per avvisare subito se mancano le chiavi
+[
+  "STRIPE_SECRET_KEY",
+  "STRIPE_PUBLISHABLE_KEY",
+  "PUBLIC_BASE_URL",
+  "UPSTASH_REDIS_REST_URL",
+  "UPSTASH_REDIS_REST_TOKEN",
+  "RESEND_API_KEY",
+].forEach((k) => {
+  if (!process.env[k]) console.warn("[env] Manca", k);
+});
+
+/* ------------------------ 2. UPSTASH REDIS (REST) - Funzioni definite qui per l'utilizzo nel Webhook ------------------------ */
+const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const TOKEN_TTL_SECONDS = Number(
+  process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30
+);
+
+async function redisCommand(...args) {
+  const r = await fetch(UPSTASH_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${UPSTASH_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ command: args }),
+  });
+  const j = await r.json();
+  if (!r.ok)
+    throw new Error(`Upstash error ${r.status}: ${JSON.stringify(j)}`);
+  return j; // { result: ... }
+}
+
+// Helpers
+const getAttemptsKey = (token) => `token:${token}:attempts`;
+const getMetaKey = (token) => `token:${token}:meta`;
+
+async function getAttempts(token) {
+  const meta = await redisCommand("GET", getMetaKey(token));
+  if (!meta.result) return null;
+  const att = await redisCommand("GET", getAttemptsKey(token));
+  return Math.max(0, Number(att.result || 0));
+}
+
+async function consumeAttempt(token) {
+  const meta = await redisCommand("GET", getMetaKey(token));
+  if (!meta.result) return { error: "Token non valido" };
+  const decr = await redisCommand("DECR", getAttemptsKey(token));
+  let remaining = Number(decr.result);
+  if (remaining < 0) {
+    await redisCommand("SET", getAttemptsKey(token), "0", "EX", String(TOKEN_TTL_SECONDS));
+    return { error: "Tentativi esauriti" };
+  }
+  if (TOKEN_TTL_SECONDS > 0) {
+    await redisCommand("EXPIRE", getAttemptsKey(token), String(TOKEN_TTL_SECONDS));
+    await redisCommand("EXPIRE", getMetaKey(token), String(TOKEN_TTL_SECONDS));
+  }
+  return { remaining };
+}
+
+// Funzione mancante implementata
+async function trackPromoUsage(code, data) {
+  if (!code) return;
+  await redisCommand("INCR", `promo:${code}:count`);
+  await redisCommand(
+    "LPUSH",
+    `promo:${code}:uses`,
+    JSON.stringify({ code, ...data, ts: Date.now() })
+  );
+  await redisCommand("LTRIM", `promo:${code}:uses`, "0", "99");
+}
+
+
+/* ------------------------ 3. WEBHOOK (prima dei parser JSON) ------------------------ */
 app.post(
   "/webhook",
   express.raw({ type: "application/json" }),
@@ -79,7 +154,7 @@ app.post(
         const breakdown = sess.total_details?.breakdown?.discounts || [];
         for (const d of breakdown) {
           const promoId = d.discount?.promotion_code;
-            if (!promoId) continue;
+          if (!promoId) continue;
           const promo = await stripe.promotionCodes.retrieve(promoId, {
             expand: ["coupon"],
           });
@@ -101,21 +176,20 @@ app.post(
 
       // Email con link
       const link = `${process.env.PUBLIC_BASE_URL}/public/calculator.html?t=${token}`;
-      const from = process.env.RESEND_FROM || "mail.psgecosystem.com";
-      // ...
-      const replyTo = process.env.REPLY_TO || undefined;
+      // NOTA: il from deve essere un indirizzo verificato su Resend (es. info@mail.tuodominio.com)
+      const from = process.env.RESEND_FROM || "mail.psgecosystem.com"; 
+      const replyTo = process.env.REPLY_TO; // Correggiamo la gestione di replyTo (se undefined, non viene aggiunto)
+
       try {
-        // ...
         await resend.emails.send({
           from: `DC Calculator <${from}>`,
           to: email,
-          //...
-          replyTo,
+          // Correzione: aggiunge replyTo solo se la variabile d'ambiente è impostata
+          ...(replyTo ? { replyTo } : {}), 
           subject: "Il tuo link al calcolatore",
-          // ...
           html: `<p>Ciao! Ecco il tuo link personale al calcolatore:</p>
-                 <p><a href="${link}">${link}</a></p>
-                 <p>Tentativi disponibili: <strong>${attempts}</strong></p>`,
+                   <p><a href="${link}">${link}</a></p>
+                   <p>Tentativi disponibili: <strong>${attempts}</strong></p>`,
         });
       } catch (e) {
         console.error("Errore invio email Resend:", e?.message || e);
@@ -126,7 +200,7 @@ app.post(
   }
 );
 
-/* ------------------------ 2. PARSER E LOGGING ------------------------ */
+/* ------------------------ 4. PARSER E LOGGING ------------------------ */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -137,84 +211,20 @@ app.use((req, res, next) => {
   next();
 });
 
-/* ------------------------ 3. VALIDAZIONE ENV MINIMA ------------------------ */
-[
-  "STRIPE_SECRET_KEY",
-  "STRIPE_PUBLISHABLE_KEY",
-  "PUBLIC_BASE_URL",
-  "UPSTASH_REDIS_REST_URL",
-  "UPSTASH_REDIS_REST_TOKEN",
-  "RESEND_API_KEY",
-].forEach((k) => {
-  if (!process.env[k]) console.warn("[env] Manca", k);
-});
 
-/* ------------------------ 4. STATICI ------------------------ */
+/* ------------------------ 5. STATICI ------------------------ */
 app.use(
   "/public",
   express.static(path.join(__dirname, "public"), { index: false })
 );
 app.get("/", (_, res) => res.redirect("/public/index.html"));
 
-/* ------------------------ 5. UPSTASH REDIS (REST) ------------------------ */
-const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
-const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
-const TOKEN_TTL_SECONDS = Number(
-  process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30
-);
-
-async function redisCommand(...args) {
-  const r = await fetch(UPSTASH_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${UPSTASH_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ command: args }),
-  });
-  const j = await r.json();
-  if (!r.ok)
-    throw new Error(`Upstash error ${r.status}: ${JSON.stringify(j)}`);
-  return j; // { result: ... }
-}
-
-// Helpers
-const getAttemptsKey = (token) => `token:${token}:attempts`;
-const getMetaKey = (token) => `token:${token}:meta`;
-
-async function getAttempts(token) {
-  const meta = await redisCommand("GET", getMetaKey(token));
-  if (!meta.result) return null;
-  const att = await redisCommand("GET", getAttemptsKey(token));
-  return Math.max(0, Number(att.result || 0));
-}
-
-async function consumeAttempt(token) {
-  const meta = await redisCommand("GET", getMetaKey(token));
-  if (!meta.result) return { error: "Token non valido" };
-  const decr = await redisCommand("DECR", getAttemptsKey(token));
-  let remaining = Number(decr.result);
-  if (remaining < 0) {
-    await redisCommand("SET", getAttemptsKey(token), "0", "EX", String(TOKEN_TTL_SECONDS));
-    return { error: "Tentativi esauriti" };
-  }
-  if (TOKEN_TTL_SECONDS > 0) {
-    await redisCommand("EXPIRE", getAttemptsKey(token), String(TOKEN_TTL_SECONDS));
-    await redisCommand("EXPIRE", getMetaKey(token), String(TOKEN_TTL_SECONDS));
-  }
-  return { remaining };
-}
 
 /* ------------------------ 6. PRICE IDs (SOSTITUISCI con price_...) ------------------------ */
-/*
-  IMPORTANTE: qui servono gli ID dei PRICE (price_...) NON i prod_...
-  Esempio:
-    "1": "price_abc123..."   // 1 tentativo/pacchetto
-*/
 const PRICES = {
-  "1": "price_1SGd2uFb9AZszxVCwrlU2Ooh",   // €30  (placeholder)
-  "3": "price_1SGdGIFb9AZszxVCpQyNIX3jF",   // €50
-  "10": "price_1SGdHdFb9AZszxVCidfbEB4b", // €100
+  "1": "price_1SGd2uFb9AZszxVCwrlU2Ooh",
+  "3": "price_1SGdGIFb9AZszxVCpQyNIX3jF",
+  "10": "price_1SGdHdFb9AZszxVCidfbEB4b",
 };
 
 /* ------------------------ 7. CONFIG PUBBLICA (PK) ------------------------ */
@@ -235,23 +245,8 @@ async function findPromotionCodeId(code) {
   return list.data?.[0]?.id || null;
 }
 
-/* ------------------------ 9. TRACK PROMO ------------------------ */
-async function trackPromoUsage(code, data) {
-  if (!code) return;
-  await redisCommand("INCR", `promo:${code}:count`);
-  await redisCommand(
-    "LPUSH",
-    `promo:${code}:uses`,
-    JSON.stringify({ code, ...data, ts: Date.now() })
-  );
-  await redisCommand("LTRIM", `promo:${code}:uses`, "0", "99");
-}
 
-/* ------------------------ 10. CREATE CHECKOUT SESSION (UNICA VERSIONE) ------------------------ */
-/*
-  Body: { email, pkg, promoCode? }
-  pkg deve essere una delle chiavi di PRICES
-*/
+/* ------------------------ 9. CREATE CHECKOUT SESSION (UNICA VERSIONE) ------------------------ */
 app.post("/api/create-checkout-session", async (req, res) => {
   const { email, pkg, promoCode } = req.body || {};
   if (!email || !PRICES[pkg]) {
@@ -260,7 +255,6 @@ app.post("/api/create-checkout-session", async (req, res) => {
   const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   if (!isEmail) return res.status(400).json({ error: "Email non valida" });
 
-  // Verifica che l'ID sia un price_
   const priceId = PRICES[pkg];
   if (!priceId.startsWith("price_")) {
     return res.status(500).json({
@@ -282,7 +276,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
     }
 
     const session = await stripe.checkout.sessions.create({
-      mode: "payment", // se i Price fossero ricorrenti: 'subscription'
+      mode: "payment",
       payment_method_types: ["card"],
       customer_email: email,
       line_items: [{ price: priceId, quantity: 1 }],
@@ -309,7 +303,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
   }
 });
 
-/* ------------------------ 11. API TENTATIVI ------------------------ */
+/* ------------------------ 10. API TENTATIVI ------------------------ */
 app.post("/api/attempts", async (req, res) => {
   const { action, token } = req.body || {};
   if (!token) return res.status(400).json({ error: "Token mancante" });
@@ -326,7 +320,7 @@ app.post("/api/attempts", async (req, res) => {
   return res.status(400).json({ error: "Azione non valida" });
 });
 
-/* ------------------------ 12. ADMIN PROMO USAGE ------------------------ */
+/* ------------------------ 11. ADMIN PROMO USAGE ------------------------ */
 app.get("/api/promo-usage", async (req, res) => {
   const adminKey = req.headers["x-admin-key"];
   if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
@@ -343,7 +337,7 @@ app.get("/api/promo-usage", async (req, res) => {
   res.json({ code, count: Number(count.result || 0), recent: list });
 });
 
-/* ------------------------ 13. HANDLER ERRORE GLOBALE ------------------------ */
+/* ------------------------ 12. HANDLER ERRORE GLOBALE ------------------------ */
 app.use((err, req, res, next) => {
   const status = err?.status || err?.statusCode || 500;
   const payload = {
@@ -354,7 +348,7 @@ app.use((err, req, res, next) => {
   res.status(status).json({ ok: false, error: payload });
 });
 
-/* ------------------------ 14. AVVIO ------------------------ */
+/* ------------------------ 13. AVVIO ------------------------ */
 const port = process.env.PORT || 4242;
 app.listen(port, () => {
   console.log(
