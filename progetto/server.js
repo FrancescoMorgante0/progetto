@@ -6,19 +6,11 @@ import Stripe from "stripe";
 import { Resend } from "resend";
 import { v4 as uuidv4 } from "uuid";
 
-// Usa dotenv
 dotenv.config();
 
 const app = express();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const resend = new Resend(process.env.RESEND_API_KEY);
-
-// Usa fetch nativo di Node 18+/20. Se non presente, carica dinamicamente node-fetch.
-let fetchHttp = global.fetch;
-if (!fetchHttp) {
-  const mod = await import("node-fetch");
-  fetchHttp = mod.default;
-}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,13 +27,27 @@ const __dirname = path.dirname(__filename);
   if (!process.env[k]) console.warn("[env] Manca", k);
 });
 
-/* ------------------------ 2) UPSTASH (REST) ------------------------ */
+/* ------------------------ 2) fetch compatibile (Node 16/18/20) ------------------------ */
+async function compatFetch(...args) {
+  let f = globalThis.fetch;
+  if (!f) {
+    try {
+      const mod = await import("node-fetch"); // carica solo se manca fetch nativo
+      f = mod.default;
+    } catch (e) {
+      throw new Error("fetch non disponibile: usa Node 18+ oppure aggiungi node-fetch tra le dipendenze.");
+    }
+  }
+  return f(...args);
+}
+
+/* ------------------------ 3) UPSTASH (REST) ------------------------ */
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const TOKEN_TTL_SECONDS = Number(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30);
 
 async function redisCommand(...args) {
-  const r = await fetchHttp(UPSTASH_URL, {
+  const r = await compatFetch(UPSTASH_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${UPSTASH_TOKEN}`,
@@ -87,7 +93,7 @@ async function trackPromoUsage(code, data) {
   await redisCommand("LTRIM", `promo:${code}:uses`, "0", "99");
 }
 
-/* ------------------------ 3) WEBHOOK (PRIMA DEI PARSER!) ------------------------ */
+/* ------------------------ 4) WEBHOOK (PRIMA dei parser JSON) ------------------------ */
 app.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   const sig = req.headers["stripe-signature"];
   let event;
@@ -106,7 +112,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
 
-    // Evita doppi invii
+    // già gestito?
     try {
       const already = await redisCommand("GET", `stripe:handled:${session.id}`);
       if (already?.result) return res.json({ received: true, duplicate: true });
@@ -114,7 +120,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
       console.warn("Handled check error:", e?.message || e);
     }
 
-    // Lock
+    // lock
     const lockKey = `stripe:processing:${session.id}`;
     const lock = await redisCommand("SET", lockKey, "1", "NX", "EX", "300");
     if (lock.result !== "OK") return res.json({ received: true, processing: true });
@@ -133,13 +139,12 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
         return res.status(500).send("Email assente in sessione");
       }
 
-      // Token + TTL
       const token = uuidv4();
       const ttl = String(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30);
       await redisCommand("SET", `token:${token}:meta`, JSON.stringify({ email, createdAt: Date.now() }), "EX", ttl);
       await redisCommand("SET", `token:${token}:attempts`, String(attempts), "EX", ttl);
 
-      // Tracking sconti
+      // tracking sconti (best effort)
       try {
         const sess = await stripe.checkout.sessions.retrieve(session.id, { expand: ["total_details.breakdown.discounts"] });
         const breakdown = sess.total_details?.breakdown?.discounts || [];
@@ -163,7 +168,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
         console.error("Promo tracking error:", e?.message || e);
       }
 
-      // Invio email
+      // invio email
       const from = process.env.RESEND_FROM || "onboarding@resend.dev";
       const replyTo = process.env.REPLY_TO || undefined;
       const link = `${process.env.PUBLIC_BASE_URL}/public/calculator.html?t=${token}`;
@@ -197,7 +202,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
   return res.json({ received: true });
 });
 
-/* ------------------------ 4) PARSER E LOGGING ------------------------ */
+/* ------------------------ 5) PARSER E LOGGING ------------------------ */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -208,23 +213,23 @@ app.use((req, res, next) => {
   next();
 });
 
-/* ------------------------ 5) STATICI ------------------------ */
+/* ------------------------ 6) STATICI ------------------------ */
 app.use("/public", express.static(path.join(__dirname, "public"), { index: false }));
 app.get("/", (_, res) => res.redirect("/public/index.html"));
 
-/* ------------------------ 6) PRICE IDs (TEST) ------------------------ */
+/* ------------------------ 7) PRICE IDs (TEST) ------------------------ */
 const PRICES = {
   "1": "price_1SGd2uFb9AZszxVCwrlU2Ooh",
   "3": "price_1SGdGIFb9AZszxVCpQyNIX3jF",
   "10": "price_1SGdHdFb9AZszxVCidfbEB4b",
 };
 
-/* ------------------------ 7) PUBBLICA CONFIG ------------------------ */
+/* ------------------------ 8) CONFIG PUBBLICA (PK) ------------------------ */
 app.get("/api/public-config", (req, res) => {
   res.json({ stripePk: process.env.STRIPE_PUBLISHABLE_KEY || "" });
 });
 
-/* ------------------------ 8) PROMO LOOKUP ------------------------ */
+/* ------------------------ 9) PROMO LOOKUP ------------------------ */
 async function findPromotionCodeId(code) {
   if (!code) return null;
   const cleaned = String(code).trim();
@@ -233,7 +238,7 @@ async function findPromotionCodeId(code) {
   return list.data?.[0]?.id || null;
 }
 
-/* ------------------------ 9) CHECKOUT SESSION ------------------------ */
+/* ------------------------ 10) CREATE CHECKOUT SESSION ------------------------ */
 app.post("/api/create-checkout-session", async (req, res) => {
   const { email, pkg, promoCode } = req.body || {};
   if (!email || !PRICES[pkg]) return res.status(400).json({ error: "Parametri non validi" });
@@ -281,7 +286,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
   }
 });
 
-/* ------------------------ 10) API TENTATIVI ------------------------ */
+/* ------------------------ 11) API TENTATIVI ------------------------ */
 app.post("/api/attempts", async (req, res) => {
   const { action, token } = req.body || {};
   if (!token) return res.status(400).json({ error: "Token mancante" });
@@ -298,7 +303,7 @@ app.post("/api/attempts", async (req, res) => {
   return res.status(400).json({ error: "Azione non valida" });
 });
 
-/* ------------------------ 11) ADMIN PROMO USAGE ------------------------ */
+/* ------------------------ 12) ADMIN PROMO USAGE ------------------------ */
 app.get("/api/promo-usage", async (req, res) => {
   const adminKey = req.headers["x-admin-key"];
   if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
@@ -313,7 +318,7 @@ app.get("/api/promo-usage", async (req, res) => {
   res.json({ code, count: Number(count.result || 0), recent: list });
 });
 
-/* ------------------------ 12) TEST EMAIL ------------------------ */
+/* ------------------------ 13) TEST EMAIL ------------------------ */
 app.post("/api/test-email", async (req, res) => {
   try {
     const to = req.body?.to || process.env.TEST_EMAIL_TO;
@@ -335,12 +340,12 @@ app.post("/api/test-email", async (req, res) => {
   }
 });
 
-/* ------------------------ 13) HEALTHCHECK ------------------------ */
+/* ------------------------ 14) HEALTHCHECK ------------------------ */
 app.get("/health", (req, res) => res.status(200).json({ ok: true }));
 
-/* ------------------------ 14) AVVIO ------------------------ */
+/* ------------------------ 15) AVVIO ------------------------ */
 const port = process.env.PORT || 4242;
 app.listen(port, () => {
-  console.log(`[boot] Node ${process.version} listening on ${port}`);
+  console.log(`[boot] listening on ${port} (Node ${process.version})`);
   console.log(`Server attivo su ${process.env.PUBLIC_BASE_URL || `http://localhost:${port}`}`);
 });
