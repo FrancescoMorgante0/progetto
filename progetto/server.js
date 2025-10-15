@@ -17,7 +17,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /* ------------------------ 1. VALIDAZIONE ENV MINIMA ------------------------ */
-// Spostato qui per avvisare subito se mancano le chiavi
 [
   "STRIPE_SECRET_KEY",
   "STRIPE_PUBLISHABLE_KEY",
@@ -29,12 +28,10 @@ const __dirname = path.dirname(__filename);
   if (!process.env[k]) console.warn("[env] Manca", k);
 });
 
-/* ------------------------ 2. UPSTASH REDIS (REST) - Funzioni definite qui per l'utilizzo nel Webhook ------------------------ */
+/* ------------------------ 2. UPSTASH REDIS (REST) ------------------------ */
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
-const TOKEN_TTL_SECONDS = Number(
-  process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30
-);
+const TOKEN_TTL_SECONDS = Number(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30);
 
 async function redisCommand(...args) {
   const r = await fetch(UPSTASH_URL, {
@@ -46,8 +43,7 @@ async function redisCommand(...args) {
     body: JSON.stringify({ command: args }),
   });
   const j = await r.json();
-  if (!r.ok)
-    throw new Error(`Upstash error ${r.status}: ${JSON.stringify(j)}`);
+  if (!r.ok) throw new Error(`Upstash error ${r.status}: ${JSON.stringify(j)}`);
   return j; // { result: ... }
 }
 
@@ -78,86 +74,79 @@ async function consumeAttempt(token) {
   return { remaining };
 }
 
-// Funzione mancante implementata
 async function trackPromoUsage(code, data) {
   if (!code) return;
   await redisCommand("INCR", `promo:${code}:count`);
-  await redisCommand(
-    "LPUSH",
-    `promo:${code}:uses`,
-    JSON.stringify({ code, ...data, ts: Date.now() })
-  );
+  await redisCommand("LPUSH", `promo:${code}:uses`, JSON.stringify({ code, ...data, ts: Date.now() }));
   await redisCommand("LTRIM", `promo:${code}:uses`, "0", "99");
 }
 
+/* ------------------------ 3. WEBHOOK (PRIMA dei parser JSON!) ------------------------ */
+app.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  const sig = req.headers["stripe-signature"];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    // Diagnostica utile per capire se il body è raw
+    console.error("Webhook signature error:", err?.message || err);
+    console.error("Diag:", {
+      hasSigHeader: Boolean(sig),
+      bodyType: Buffer.isBuffer(req.body) ? "buffer" : typeof req.body,
+      bodyLen: Buffer.isBuffer(req.body) ? req.body.length : undefined,
+    });
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
 
-/* ------------------------ 3. WEBHOOK (prima dei parser JSON) ------------------------ */
-app.post(
-  "/webhook",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {
-    const sig = req.headers["stripe-signature"];
-    let event;
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object;
+
+    // Se già gestito in passato → esci
     try {
-      event = stripe.webhooks.constructEvent(
-        req.body,
-        sig,
-        process.env.STRIPE_WEBHOOK_SECRET
-      );
-    } catch (err) {
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+      const already = await redisCommand("GET", `stripe:handled:${session.id}`);
+      if (already?.result) {
+        return res.json({ received: true, duplicate: true });
+      }
+    } catch (e) {
+      console.warn("Handled check error (continuo comunque):", e?.message || e);
     }
 
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
+    // Lock anti-concorrenza
+    const lockKey = `stripe:processing:${session.id}`;
+    const lock = await redisCommand("SET", lockKey, "1", "NX", "EX", "300");
+    if (lock.result !== "OK") {
+      return res.json({ received: true, processing: true });
+    }
 
-      // Idempotenza
-      const handled = await redisCommand(
-        "SET",
-        `stripe:handled:${session.id}`,
-        "1",
-        "NX",
-        "EX",
-        "2592000"
-      );
-      if (handled.result !== "OK") {
-        return res.json({ received: true, duplicated: true });
+    // Email destinatario con fallback
+    const email =
+      session?.metadata?.email ||
+      session?.customer_details?.email ||
+      session?.customer_email ||
+      null;
+    const attempts = Number(session?.metadata?.attempts || 0);
+
+    try {
+      if (!email) {
+        console.error("Webhook: email mancante nella sessione", { sessionId: session.id });
+        await redisCommand("DEL", lockKey);
+        return res.status(500).send("Email assente in sessione");
       }
 
-      const email = session.metadata?.email;
-      const attempts = Number(session.metadata?.attempts || 0);
+      // Genera token e salva con TTL
       const token = uuidv4();
+      const ttl = String(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30);
+      await redisCommand("SET", `token:${token}:meta`, JSON.stringify({ email, createdAt: Date.now() }), "EX", ttl);
+      await redisCommand("SET", `token:${token}:attempts`, String(attempts), "EX", ttl);
 
-      // Salva token e tentativi
-      const ttl =
-        process.env.TOKEN_TTL_SECONDS || String(60 * 60 * 24 * 30); // default 30gg
-      await redisCommand(
-        "SET",
-        `token:${token}:meta`,
-        JSON.stringify({ email, createdAt: Date.now() }),
-        "EX",
-        String(ttl)
-      );
-      await redisCommand(
-        "SET",
-        `token:${token}:attempts`,
-        String(attempts),
-        "EX",
-        String(ttl)
-      );
-
-      // Tracciamento sconti (best effort)
+      // Tracking sconti (best effort, non blocca)
       try {
-        const sess = await stripe.checkout.sessions.retrieve(session.id, {
-          expand: ["total_details.breakdown.discounts"],
-        });
+        const sess = await stripe.checkout.sessions.retrieve(session.id, { expand: ["total_details.breakdown.discounts"] });
         const breakdown = sess.total_details?.breakdown?.discounts || [];
         for (const d of breakdown) {
           const promoId = d.discount?.promotion_code;
           if (!promoId) continue;
-          const promo = await stripe.promotionCodes.retrieve(promoId, {
-            expand: ["coupon"],
-          });
+          const promo = await stripe.promotionCodes.retrieve(promoId, { expand: ["coupon"] });
           const code = promo.code;
           await trackPromoUsage(code, {
             email,
@@ -174,31 +163,41 @@ app.post(
         console.error("Promo tracking error:", e?.message || e);
       }
 
-      // Email con link
+      // Invia email
+      const from = process.env.RESEND_FROM || "onboarding@resend.dev";
+      const replyTo = process.env.REPLY_TO || undefined;
       const link = `${process.env.PUBLIC_BASE_URL}/public/calculator.html?t=${token}`;
-      // NOTA: il from deve essere un indirizzo verificato su Resend (es. info@mail.tuodominio.com)
-      const from = process.env.RESEND_FROM || "noreply@mail.psgecosystem.com"; 
-      const replyTo = process.env.REPLY_TO; // Correggiamo la gestione di replyTo (se undefined, non viene aggiunto)
 
       try {
         await resend.emails.send({
           from: `DC Calculator <${from}>`,
           to: email,
-          // Correzione: aggiunge replyTo solo se la variabile d'ambiente è impostata
-          ...(replyTo ? { replyTo } : {}), 
+          ...(replyTo ? { replyTo } : {}),
           subject: "Il tuo link al calcolatore",
           html: `<p>Ciao! Ecco il tuo link personale al calcolatore:</p>
-                   <p><a href="${link}">${link}</a></p>
-                   <p>Tentativi disponibili: <strong>${attempts}</strong></p>`,
+                 <p><a href="${link}">${link}</a></p>
+                 <p>Tentativi disponibili: <strong>${attempts}</strong></p>`,
         });
-      } catch (e) {
-        console.error("Errore invio email Resend:", e?.message || e);
+      } catch (sendErr) {
+        console.error("Errore invio email Resend:", sendErr?.message || sendErr);
+        await redisCommand("DEL", lockKey); // consenti retry da Stripe
+        return res.status(502).send("Email sending failed");
       }
-    }
 
-    res.json({ received: true });
+      // Marca come gestito SOLO dopo invio email riuscito
+      await redisCommand("SET", `stripe:handled:${session.id}`, "1", "EX", "2592000");
+      await redisCommand("DEL", lockKey);
+      return res.json({ received: true, emailed: true });
+    } catch (e) {
+      console.error("Webhook processing error:", e?.message || e);
+      await redisCommand("DEL", lockKey);
+      return res.status(500).send("Processing failed");
+    }
   }
-);
+
+  // Altri eventi: ack veloce
+  return res.json({ received: true });
+});
 
 /* ------------------------ 4. PARSER E LOGGING ------------------------ */
 app.use(express.json());
@@ -211,16 +210,11 @@ app.use((req, res, next) => {
   next();
 });
 
-
 /* ------------------------ 5. STATICI ------------------------ */
-app.use(
-  "/public",
-  express.static(path.join(__dirname, "public"), { index: false })
-);
+app.use("/public", express.static(path.join(__dirname, "public"), { index: false }));
 app.get("/", (_, res) => res.redirect("/public/index.html"));
 
-
-/* ------------------------ 6. PRICE IDs (SOSTITUISCI con price_...) ------------------------ */
+/* ------------------------ 6. PRICE IDs (TEST price_...) ------------------------ */
 const PRICES = {
   "1": "price_1SGd2uFb9AZszxVCwrlU2Ooh",
   "3": "price_1SGdGIFb9AZszxVCpQyNIX3jF",
@@ -237,16 +231,11 @@ async function findPromotionCodeId(code) {
   if (!code) return null;
   const cleaned = String(code).trim();
   if (!cleaned) return null;
-  const list = await stripe.promotionCodes.list({
-    code: cleaned,
-    active: true,
-    limit: 1,
-  });
+  const list = await stripe.promotionCodes.list({ code: cleaned, active: true, limit: 1 });
   return list.data?.[0]?.id || null;
 }
 
-
-/* ------------------------ 9. CREATE CHECKOUT SESSION (UNICA VERSIONE) ------------------------ */
+/* ------------------------ 9. CREATE CHECKOUT SESSION ------------------------ */
 app.post("/api/create-checkout-session", async (req, res) => {
   const { email, pkg, promoCode } = req.body || {};
   if (!email || !PRICES[pkg]) {
@@ -257,10 +246,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
 
   const priceId = PRICES[pkg];
   if (!priceId.startsWith("price_")) {
-    return res.status(500).json({
-      error:
-        "ID nel mapping PRICES NON è un Price ID (sostituisci prod_... con price_...)",
-    });
+    return res.status(500).json({ error: "ID nel mapping PRICES NON è un Price ID (sostituisci prod_... con price_...)" });
   }
 
   try {
@@ -268,15 +254,13 @@ app.post("/api/create-checkout-session", async (req, res) => {
     if (promoCode && String(promoCode).trim()) {
       const promoId = await findPromotionCodeId(promoCode);
       if (!promoId) {
-        return res
-          .status(400)
-          .json({ error: "Codice sconto non valido o non attivo" });
+        return res.status(400).json({ error: "Codice sconto non valido o non attivo" });
       }
       discounts.push({ promotion_code: promoId });
     }
 
     const session = await stripe.checkout.sessions.create({
-      mode: "payment",
+      mode: "payment", // se ricorrente: 'subscription'
       payment_method_types: ["card"],
       customer_email: email,
       line_items: [{ price: priceId, quantity: 1 }],
@@ -331,27 +315,42 @@ app.get("/api/promo-usage", async (req, res) => {
   const count = await redisCommand("GET", `promo:${code}:count`);
   const uses = await redisCommand("LRANGE", `promo:${code}:uses`, "0", "30");
   let list = [];
-  try {
-    list = (uses.result || []).map((x) => JSON.parse(x));
-  } catch {}
+  try { list = (uses.result || []).map((x) => JSON.parse(x)); } catch {}
   res.json({ code, count: Number(count.result || 0), recent: list });
 });
 
-/* ------------------------ 12. HANDLER ERRORE GLOBALE ------------------------ */
+/* ------------------------ 12. TEST EMAIL (facoltativo) ------------------------ */
+app.post("/api/test-email", async (req, res) => {
+  try {
+    const to = req.body?.to || process.env.TEST_EMAIL_TO;
+    if (!to) return res.status(400).json({ ok: false, error: "Parametro 'to' mancante (o setta TEST_EMAIL_TO in ENV)" });
+    const from = process.env.RESEND_FROM || "onboarding@resend.dev";
+    const replyTo = process.env.REPLY_TO || undefined;
+
+    const r = await resend.emails.send({
+      from: `DC Calculator <${from}>`,
+      to,
+      ...(replyTo ? { replyTo } : {}),
+      subject: "Test Resend dall'app",
+      html: "<p>Se vedi questa email, Resend funziona ✅</p>",
+    });
+    res.json({ ok: true, id: r?.id || null });
+  } catch (e) {
+    console.error("Test email error:", e?.message || e);
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+/* ------------------------ 13. HANDLER ERRORE GLOBALE ------------------------ */
 app.use((err, req, res, next) => {
   const status = err?.status || err?.statusCode || 500;
-  const payload = {
-    message: err?.message || "Server error",
-    statusCode: status,
-  };
+  const payload = { message: err?.message || "Server error", statusCode: status };
   console.error("[global-error]", payload);
   res.status(status).json({ ok: false, error: payload });
 });
 
-/* ------------------------ 13. AVVIO ------------------------ */
+/* ------------------------ 14. AVVIO ------------------------ */
 const port = process.env.PORT || 4242;
 app.listen(port, () => {
-  console.log(
-    `Server attivo su ${process.env.PUBLIC_BASE_URL || `http://localhost:${port}`}`
-  );
+  console.log(`Server attivo su ${process.env.PUBLIC_BASE_URL || `http://localhost:${port}`}`);
 });
