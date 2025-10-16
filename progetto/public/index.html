@@ -2,20 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Mckinsey's ecosystem game solver – Demo & Purchase</title>
+  <title>McKinsey's ecosystem game solver – Demo & Purchase</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="/public/styles.css" />
   <script src="https://js.stripe.com/v3/"></script>
-  <!-- corrected file name (underscore) -->
+  <!-- correct file name (underscore) -->
   <script defer src="/public/js/calc_core.js"></script>
 </head>
 <body>
   <main class="container">
     <div class="row" style="align-items:center; justify-content:space-between; margin-bottom: 6px;">
-      <h1>DC Calculator</h1>
+      <h1>Ecosystem Game Solver</h1>
       <span class="badge" title="Demo does not consume attempts">Demo (k ≤ 3)</span>
     </div>
-    <p class="muted">Try the demo, which ha a limit of maximum subset=3. If you like it, you can purchase the full solver. You'll receive the link via email and your attempts will be saved persistently.You spend one attempt anytime you click "calculate"</p>
+    <p class="muted">
+      Try the demo (maximum subset size k = 3). If you like it, you can purchase the full solver.
+      You'll receive your personal link via email and your attempts will be saved persistently.
+      One attempt is consumed each time you click “Calculate”.
+    </p>
 
     <section class="grid" style="margin-top:14px">
       <!-- DEMO (k ≤ 3, does not consume) -->
@@ -28,13 +32,15 @@
               <label>Name</label>
               <input class="input" type="text" id="d-nome" placeholder="e.g. Eagle" />
             </div>
-            <div style="width:160px">
-              <label>Calories available </label>
+            <div style="width:180px">
+              <label>Calories available</label>
               <input class="input" type="number" id="d-fondi" min="0" placeholder="120" />
+              <p class="helper">If empty, it defaults to 0.</p>
             </div>
-            <div style="width:160px">
+            <div style="width:180px">
               <label>Calories needed</label>
               <input class="input" type="number" id="d-bisogno" min="0" placeholder="200" />
+              <p class="helper">If empty, it defaults to 0.</p>
             </div>
           </div>
 
@@ -44,7 +50,7 @@
               <input class="input" type="text" id="d-donatori" placeholder="Shark, Lion" />
             </div>
             <div class="grow">
-              <label>Range 1 (optional. Example:range of temperature)</label>
+              <label>Range 1 (optional, e.g. temperature)</label>
               <input class="input" type="text" id="d-range1" placeholder="1-5 or 3" />
             </div>
             <div class="grow">
@@ -62,7 +68,7 @@
           </div>
 
           <div class="row" style="margin-top:10px">
-            <button id="d-add" type="button" class="btn-ghost">Add item</button>
+            <button id="d-add" type="button" class="btn">Add item</button>
             <button id="d-clear" type="button" class="btn btn-danger">Remove all</button>
           </div>
         </form>
@@ -78,20 +84,22 @@
         </table>
 
         <div class="row" style="margin-top:10px; align-items: center;">
-          <div style="width:160px">
-            <label>subset k (max 3, no limits in full solver)</label>
+          <div style="width:260px; max-width: 100%;">
+            <label>Subset k (max 3 — no limit in the full solver)</label>
             <input class="input" type="number" id="d-k" min="1" max="3" value="3" />
           </div>
           <button id="d-calc" type="button" class="btn">Calculate</button>
         </div>
         <pre id="d-result" class="result" style="margin-top:10px">Add some items and press Calculate.</pre>
-        <p class="helper">The demo does not consume attempts and does not require a specific link.
-        The developers of this solver have no connections with Mckinsey and Company. This solver must be used accordingly to Mckinsey's policy. </p>
+        <p class="helper" style="margin-top:6px">
+          The demo does not consume attempts and does not require a specific link.
+          The developers of this solver have no affiliation with McKinsey & Company. Use this solver in accordance with McKinsey’s policies.
+        </p>
       </section>
 
       <!-- PURCHASE -->
       <aside class="card">
-        <h2>Purchase the full calcolator</h2>
+        <h2>Purchase the full calculator</h2>
         <p class="helper">Link via email, persistent attempts, no limit on subset k.</p>
         <div class="divider"></div>
         <ul class="helper" style="list-style:none; padding:0; margin:0 0 6px">
@@ -103,6 +111,7 @@
         <form id="buy-form" onsubmit="return false;" style="margin-top:8px">
           <label>Email</label>
           <input class="input" type="email" id="email" placeholder="name@example.com" required />
+
           <label>Package</label>
           <select class="select" id="pkg" required>
             <option value="1">1 attempt (€30)</option>
@@ -111,7 +120,7 @@
           </select>
 
           <p class="helper" style="margin-top:6px">
-            You have a discount code? You'll be able to enter it during checkout.
+            If you have a discount code, you’ll be able to enter it during checkout.
           </p>
 
           <button id="btn-buy" type="button" class="btn" style="margin-top:10px; width:100%">Proceed to payment</button>
@@ -150,7 +159,8 @@
           <td></td>`;
         const tdAz=tr.lastElementChild;
         const b=document.createElement("button");
-        b.textContent="Remove"; b.className="btn-ghost";
+        b.textContent="Remove";
+        b.className="btn btn-danger";
         b.onclick=()=>{ delete D.elementi[key]; renderDemoTable(); };
         tdAz.appendChild(b);
         tb.appendChild(tr);
@@ -224,7 +234,7 @@
         const r = await fetch("/api/create-checkout-session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // removed promo code from request body
+          // promo code field removed; not sent
           body: JSON.stringify({ email, pkg })
         });
         const j = await r.json();
