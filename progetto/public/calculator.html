@@ -5,7 +5,6 @@
   <title>McKinsey's ecosystem game solver – Personal link</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="/public/styles.css" />
-  <!-- correct file name (underscore) -->
   <script defer src="/public/js/calc_core.js"></script>
 </head>
 <body>
@@ -70,11 +69,25 @@
       </form>
     </section>
 
+    <!-- RIPRISTINATA: tabella Items fissa, come nella demo -->
+    <section class="card">
+      <h2>Items</h2>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Name</th><th>Calories</th><th>Required</th><th>Donors</th>
+            <th>R1</th><th>R2</th><th>R3</th><th>R4</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </section>
+
     <section class="card">
       <h2>Subset calculation</h2>
       <div class="row" style="align-items:center">
         <div style="width:160px">
-          <label>number of elements</label>
+          <label>k number of elements</label>
           <input class="input" type="number" id="k" min="1" />
         </div>
         <button id="btn-calc" type="button" class="btn">Calculate</button>
@@ -89,7 +102,7 @@
     const token = new URLSearchParams(location.search).get("t") || "";
     const elTok = document.getElementById("tok");
     const elTentativi = document.getElementById("tentativi");
-    const elTbody = document.getElementById("tbody");
+    const elTbody = document.getElementById("tbody"); // esiste sempre (tabella fissa)
     const elResult = document.getElementById("result");
     const netMsg = document.getElementById("netmsg");
     const btnCalc = document.getElementById("btn-calc");
@@ -132,30 +145,12 @@
     }
 
     function renderTabella(){
-      // create table body lazily if missing
-      let tbody = elTbody;
-      if (!tbody) {
-        const tblSection = document.querySelector("section.card:nth-of-type(2)");
-        const table = document.createElement("table");
-        table.className = "table";
-        table.innerHTML = `
-          <thead>
-            <tr>
-              <th>Name</th><th>Calories</th><th>Required</th><th>Donors</th>
-              <th>R1</th><th>R2</th><th>R3</th><th>R4</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="tbody"></tbody>`;
-        tblSection.appendChild(table);
-        tbody = document.getElementById("tbody");
-      }
-
-      tbody.innerHTML = "";
+      elTbody.innerHTML = "";
       const entries = Object.entries(elementi);
       if(entries.length===0){
         const tr=document.createElement("tr"); const td=document.createElement("td");
         td.colSpan=9; td.textContent="No items added."; td.className="helper";
-        tr.appendChild(td); tbody.appendChild(tr); return;
+        tr.appendChild(td); elTbody.appendChild(tr); return;
       }
       for(const [key,data] of entries){
         const tr=document.createElement("tr");
@@ -175,7 +170,7 @@
         btnDel.className="btn btn-danger";
         btnDel.onclick=()=>{ delete elementi[key]; renderTabella(); };
         tdAzioni.appendChild(btnDel);
-        tbody.appendChild(tr);
+        elTbody.appendChild(tr);
       }
     }
 
