@@ -252,7 +252,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
 
         try {
           await resend.emails.send({
-            from: `DC Calculator <${from}>`,
+            from: `Ecosystem solver <${from}>`,
             to: email,
             ...(replyTo ? { replyTo } : {}),
             subject: "Il tuo link al calcolatore",
