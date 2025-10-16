@@ -1,75 +1,78 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>DC Calculator – Demo e Acquisto</title>
+  <title>DC Calculator – Demo & Purchase</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="/public/styles.css" />
   <script src="https://js.stripe.com/v3/"></script>
+  <!-- corrected file name (underscore) -->
   <script defer src="/public/js/calc_core.js"></script>
 </head>
 <body>
   <main class="container">
     <div class="row" style="align-items:center; justify-content:space-between; margin-bottom: 6px;">
       <h1>DC Calculator</h1>
-      <span class="badge" title="Demo senza consumo tentativi">Demo attiva (k ≤ 3)</span>
+      <span class="badge" title="Demo does not consume attempts">Demo (k ≤ 3)</span>
     </div>
-    <p class="muted">Prova la demo. Se ti piace, acquista il link personale al calcolatore completo: riceverai il link via email e i tentativi saranno salvati in modo persistente.</p>
+    <p class="muted">Try the demo. If you like it, you can purchase your personal calculator link. You'll receive the link via email and your attempts will be saved persistently.</p>
 
     <section class="grid" style="margin-top:14px">
-      <!-- DEMO (k ≤ 3, non consuma) -->
+      <!-- DEMO (k ≤ 3, does not consume) -->
       <section class="card">
-        <h2>Demo del calcolatore</h2>
+        <h2>Calculator demo</h2>
 
         <form id="form-add" onsubmit="return false;">
           <div class="row">
             <div class="grow">
-              <label>Nome</label>
-              <input class="input" type="text" id="d-nome" placeholder="es. Riso" />
+              <label>Name</label>
+              <input class="input" type="text" id="d-nome" placeholder="e.g. Rice" />
             </div>
             <div style="width:160px">
-              <label>Calorie</label>
+              <label>Calories</label>
               <input class="input" type="number" id="d-fondi" min="0" placeholder="120" />
+              <p class="helper">If empty, it defaults to 0.</p>
             </div>
             <div style="width:160px">
-              <label>Bisogno</label>
+              <label>Required</label>
               <input class="input" type="number" id="d-bisogno" min="0" placeholder="200" />
+              <p class="helper">If empty, it defaults to 0.</p>
             </div>
           </div>
 
           <div class="row">
             <div class="grow">
-              <label>Donatori (virgole)</label>
+              <label>Donors (comma‑separated)</label>
               <input class="input" type="text" id="d-donatori" placeholder="Anna, Bob" />
             </div>
             <div class="grow">
-              <label>Range 1 (fac.)</label>
-              <input class="input" type="text" id="d-range1" placeholder="1-5 o 3" />
+              <label>Range 1 (optional)</label>
+              <input class="input" type="text" id="d-range1" placeholder="1-5 or 3" />
             </div>
             <div class="grow">
-              <label>Range 2 (fac.)</label>
-              <input class="input" type="text" id="d-range2" placeholder="10-20 o 12" />
+              <label>Range 2 (optional)</label>
+              <input class="input" type="text" id="d-range2" placeholder="10-20 or 12" />
             </div>
             <div class="grow">
-              <label>Range 3 (fac.)</label>
-              <input class="input" type="text" id="d-range3" placeholder="2-4 o 3" />
+              <label>Range 3 (optional)</label>
+              <input class="input" type="text" id="d-range3" placeholder="2-4 or 3" />
             </div>
             <div class="grow">
-              <label>Range 4 (fac.)</label>
-              <input class="input" type="text" id="d-range4" placeholder="5-8 o 6" />
+              <label>Range 4 (optional)</label>
+              <input class="input" type="text" id="d-range4" placeholder="5-8 or 6" />
             </div>
           </div>
 
           <div class="row" style="margin-top:10px">
-            <button id="d-add" type="button" class="btn-ghost">Aggiungi elemento</button>
-            <button id="d-clear" type="button" class="btn btn-danger">Rimuovi tutti</button>
+            <button id="d-add" type="button" class="btn-ghost">Add item</button>
+            <button id="d-clear" type="button" class="btn btn-danger">Remove all</button>
           </div>
         </form>
 
         <table class="table">
           <thead>
             <tr>
-              <th>Nome</th><th>Calorie</th><th>Bisogno</th><th>Donatori</th>
+              <th>Name</th><th>Calories</th><th>Required</th><th>Donors</th>
               <th>R1</th><th>R2</th><th>R3</th><th>R4</th><th></th>
             </tr>
           </thead>
@@ -81,43 +84,46 @@
             <label>k (max 3)</label>
             <input class="input" type="number" id="d-k" min="1" max="3" value="3" />
           </div>
-          <button id="d-calc" type="button" class="btn">Calcola</button>
+          <button id="d-calc" type="button" class="btn">Calculate</button>
         </div>
-        <pre id="d-result" class="result" style="margin-top:10px">Inserisci elementi e premi Calcola.</pre>
-        <p class="helper">La demo non consuma tentativi e non richiede token.</p>
+        <pre id="d-result" class="result" style="margin-top:10px">Add some items and press Calculate.</pre>
+        <p class="helper">The demo does not consume attempts and does not require a token.</p>
       </section>
 
-      <!-- ACQUISTO -->
+      <!-- PURCHASE -->
       <aside class="card">
-        <h2>Acquista il link completo</h2>
-        <p class="helper">Link via email, tentativi persistenti, nessun limite su k.</p>
+        <h2>Purchase the full link</h2>
+        <p class="helper">Link via email, persistent attempts, no limit on k.</p>
         <div class="divider"></div>
         <ul class="helper" style="list-style:none; padding:0; margin:0 0 6px">
-          <li>1 tentativo — 30 €</li>
-          <li>3 tentativi — 50 €</li>
-          <li>10 tentativi — 100 €</li>
+          <li>1 attempt — €30</li>
+          <li>3 attempts — €50</li>
+          <li>10 attempts — €100</li>
         </ul>
 
         <form id="buy-form" onsubmit="return false;" style="margin-top:8px">
           <label>Email</label>
-          <input class="input" type="email" id="email" placeholder="nome@dominio.com" required />
-          <label>Pacchetto</label>
+          <input class="input" type="email" id="email" placeholder="name@example.com" required />
+          <label>Package</label>
           <select class="select" id="pkg" required>
-            <option value="1">1 tentativo (€30)</option>
-            <option value="3">3 tentativi (€50)</option>
-            <option value="10">10 tentativi (€100)</option>
+            <option value="1">1 attempt (€30)</option>
+            <option value="3">3 attempts (€50)</option>
+            <option value="10">10 attempts (€100)</option>
           </select>
-          <label>Codice sconto (facoltativo)</label>
-          <input class="input" type="text" id="promo" placeholder="es. ESTATE10" />
-          <button id="btn-buy" type="button" class="btn" style="margin-top:10px; width:100%">Procedi al pagamento</button>
-          <p id="msg" class="helper" style="margin-top:8px"></p>
+
+          <p class="helper" style="margin-top:6px">
+            If you have a discount code, you'll be able to enter it during checkout.
+          </p>
+
+          <button id="btn-buy" type="button" class="btn" style="margin-top:10px; width:100%">Proceed to payment</button>
+          <p id="msg" class="helper" style="margin-top:8px" aria-live="polite"></p>
         </form>
       </aside>
     </section>
   </main>
 
   <script>
-    // ===== DEMO (non consuma; k ≤ 3) =====
+    // ===== DEMO (does not consume; k ≤ 3) =====
     const D = { elementi: {}, norm: s=>String(s||"").trim().toLowerCase(), esc: s=>escapeHtml(s) };
     const fmtRange = (r) => formatRange(r);
 
@@ -128,7 +134,7 @@
       if(entries.length===0){
         const tr=document.createElement("tr");
         const td=document.createElement("td");
-        td.colSpan=9; td.textContent="Nessun elemento."; td.className="helper";
+        td.colSpan=9; td.textContent="No items."; td.className="helper";
         tr.appendChild(td); tb.appendChild(tr); return;
       }
       for(const [key,data] of entries){
@@ -145,7 +151,7 @@
           <td></td>`;
         const tdAz=tr.lastElementChild;
         const b=document.createElement("button");
-        b.textContent="Rimuovi"; b.className="btn-ghost";
+        b.textContent="Remove"; b.className="btn-ghost";
         b.onclick=()=>{ delete D.elementi[key]; renderDemoTable(); };
         tdAz.appendChild(b);
         tb.appendChild(tr);
@@ -155,8 +161,8 @@
     document.getElementById("d-add").addEventListener("click", () => {
       const nomeRaw = document.getElementById("d-nome").value;
       const key = D.norm(nomeRaw);
-      const fondi = parseInt(document.getElementById("d-fondi").value,10);
-      const bisogno = parseInt(document.getElementById("d-bisogno").value,10);
+      const fondi = parseInt((document.getElementById("d-fondi").value || "0"),10);
+      const bisogno = parseInt((document.getElementById("d-bisogno").value || "0"),10);
       const donRaw = document.getElementById("d-donatori").value;
       const r1Raw = document.getElementById("d-range1").value;
       const r2Raw = document.getElementById("d-range2").value;
@@ -164,7 +170,7 @@
       const r4Raw = document.getElementById("d-range4").value;
 
       if(!key || Number.isNaN(fondi) || Number.isNaN(bisogno) || fondi<0 || bisogno<0){
-        alert("Compila correttamente i campi."); return;
+        alert("Please fill in the fields correctly."); return;
       }
       const donDisp = donRaw.split(",").map(s=>s.trim()).filter(Boolean);
       const donKeys = Array.from(new Set(donDisp.map(s=>s.trim().toLowerCase()).filter(Boolean)));
@@ -184,18 +190,18 @@
     });
 
     document.getElementById("d-clear").addEventListener("click", () => {
-      if(confirm("Rimuovere tutti gli elementi?")){ D.elementi = {}; renderDemoTable(); }
+      if(confirm("Remove all items?")){ D.elementi = {}; renderDemoTable(); }
     });
 
     document.getElementById("d-calc").addEventListener("click", () => {
       const k = parseInt(document.getElementById("d-k").value,10);
-      if(Number.isNaN(k) || k<1 || k>3){ alert("Imposta k tra 1 e 3."); return; }
+      if(Number.isNaN(k) || k<1 || k>3){ alert("Set k between 1 and 3."); return; }
       const out = document.getElementById("d-result");
-      out.textContent = "Calcolo in corso...";
+      out.textContent = "Calculating...";
       const esito = trovaSottoinsieme(D.elementi, k);
-      if(!esito){ out.textContent = "Nessun sottoinsieme valido trovato."; return; }
+      if(!esito){ out.textContent = "No valid subset found."; return; }
       const { combo, risultato } = esito;
-      let txt = `Sottoinsieme: ${combo.map(k=>D.elementi[k].displayName).join(", ")}\n\n--- Dettaglio ---\n`;
+      let txt = `Subset: ${combo.map(k=>D.elementi[k].displayName).join(", ")}\n\n--- Details ---\n`;
       for(const [p, alloc] of Object.entries(risultato)){
         txt += `${D.elementi[p].displayName}:\n`;
         for(const [d, val] of alloc) txt += `  ${D.elementi[d].displayName} -> ${val}\n`;
@@ -205,190 +211,31 @@
 
     renderDemoTable();
 
-    // ===== Checkout Stripe =====
+    // ===== Stripe Checkout =====
     let STRIPE_PK = "";
     (async()=>{ try{ const r=await fetch("/api/public-config"); if(r.ok){ const j=await r.json(); STRIPE_PK=j.stripePk||""; } }catch{} })();
 
     document.getElementById("btn-buy").addEventListener("click", async () => {
       const email = document.getElementById("email").value.trim();
       const pkg = document.getElementById("pkg").value;
-      const promo = document.getElementById("promo").value.trim();
       const msg = document.getElementById("msg");
-      if (!email) { msg.textContent = "Inserisci un'email valida."; return; }
-      msg.textContent = "Creazione sessione di pagamento...";
+      if (!email) { msg.textContent = "Enter a valid email."; return; }
+      msg.textContent = "Creating checkout session...";
       try {
         const r = await fetch("/api/create-checkout-session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, pkg, promoCode: promo || undefined })
+          // removed promo code from request body
+          body: JSON.stringify({ email, pkg })
         });
         const j = await r.json();
-        if (!r.ok) throw new Error(j.error || "Errore Stripe");
-        const stripe = Stripe(STRIPE_PK || "pk_test_sostituisci_qui");
+        if (!r.ok) throw new Error(j?.error?.message || "Stripe error");
+        const stripe = Stripe(STRIPE_PK || "pk_test_placeholder");
         await stripe.redirectToCheckout({ sessionId: j.id });
       } catch (e) {
-        msg.textContent = "Errore: " + e.message;
+        msg.textContent = "Error: " + (e?.message || String(e));
       }
     });
   </script>
-  <!-- ...il resto della tua pagina... -->
-
-<script>
-async function procediAlPagamento() {
-  const resp = await fetch('/api/create-checkout-session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ plan: 'standard', promoCode: '' }) // adatta ai tuoi campi reali
-  });
-
-  let data = {};
-  try { data = await resp.json(); } catch (e) {}
-
-  if (!resp.ok) {
-    console.error('Checkout error', data);
-    const msg = data?.error?.message || 'Errore nella creazione della sessione di pagamento';
-    const details = [
-      data?.error?.type && `type: ${data.error.type}`,
-      data?.error?.code && `code: ${data.error.code}`,
-      data?.error?.param && `param: ${data.error.param}`,
-      data?.error?.requestId && `requestId: ${data.error.requestId}`,
-    ].filter(Boolean).join(' | ');
-    alert(`${msg}${details ? ' [' + details + ']' : ''}`);
-    return;
-  }
-
-  const sessionId = data.id;
-  const stripe = Stripe(window.publicConfig.stripePk); // o come lo inizializzi nel tuo progetto
-  await stripe.redirectToCheckout({ sessionId });
-}
-
-// Collega la funzione al bottone, ad esempio:
-document.getElementById('payButton').addEventListener('click', (e) => {
-  e.preventDefault();
-  procediAlPagamento();
-});
-</script>
-  <script>
-async function procediAlPagamento() {
-  try {
-    const resp = await fetch('/api/create-checkout-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: 'standard', promoCode: '' }) // adatta ai tuoi campi
-    });
-
-    const raw = await resp.text();        // leggi come testo
-    let data = null;
-    try { data = JSON.parse(raw); } catch (e) {}  // prova a parsare JSON
-
-    if (!resp.ok) {
-      // Estrai il messaggio migliore possibile
-      const msg =
-        data?.error?.message ||
-        data?.message ||
-        raw ||                                // se non è JSON, mostra il testo grezzo
-        'Errore nella creazione della sessione di pagamento';
-
-      const details = [
-        data?.error?.type && `type=${data.error.type}`,
-        data?.error?.code && `code=${data.error.code}`,
-        data?.error?.param && `param=${data.error.param}`,
-        data?.error?.requestId && `requestId=${data.error.requestId}`,
-        `status=${resp.status}`
-      ].filter(Boolean).join(' | ');
-
-      console.error('Checkout error', { status: resp.status, data: data ?? raw });
-      alert(`${msg}${details ? '\n' + details : ''}`);
-      return;
-    }
-
-    // OK → reindirizza a Stripe Checkout
-    const sessionId = data?.id;
-    if (!sessionId) {
-      alert('Risposta inattesa dal server (manca sessionId)');
-      console.error('Unexpected response', data);
-      return;
-    }
-    const stripe = Stripe(window.publicConfig.stripePk);
-    await stripe.redirectToCheckout({ sessionId });
-  } catch (e) {
-    // errori di rete/JS
-    console.error('Network/JS error', e);
-    alert(`Errore di rete: ${e?.message || e}`);
-  }
-}
-
-// associa al bottone
-document.getElementById('payButton')?.addEventListener('click', (e) => {
-  e.preventDefault();
-  procediAlPagamento();
-});
-</script>
-  <script>
-function toMessage(x) {
-  try {
-    if (!x) return 'Errore sconosciuto';
-    if (typeof x === 'string') return x;
-    if (x.error?.message) return x.error.message;
-    if (x.message) return x.message;
-    return JSON.stringify(x, null, 2);
-  } catch { return String(x); }
-}
-
-async function procediAlPagamento() {
-  try {
-    const resp = await fetch('/api/create-checkout-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: 'standard', promoCode: '' }) // adatta ai tuoi campi
-    });
-
-    const raw = await resp.text();
-    let data = null;
-    try { data = JSON.parse(raw); } catch {}
-
-    if (!resp.ok) {
-      const details = [
-        data?.error?.type && `type=${data.error.type}`,
-        data?.error?.code && `code=${data.error.code}`,
-        data?.error?.param && `param=${data.error.param}`,
-        data?.error?.requestId && `requestId=${data.error.requestId}`,
-        `status=${resp.status}`
-      ].filter(Boolean).join(' | ');
-      console.error('Checkout error', { status: resp.status, body: data ?? raw });
-      alert(`${toMessage(data ?? raw)}${details ? '\n' + details : ''}`);
-      return;
-    }
-
-    const sessionId = data?.id;
-    if (!sessionId) {
-      console.error('Unexpected response body', data ?? raw);
-      alert('Risposta inattesa dal server (manca sessionId)');
-      return;
-    }
-    const stripe = Stripe(window.publicConfig.stripePk);
-    await stripe.redirectToCheckout({ sessionId });
-  } catch (e) {
-    console.error('Network/JS error', e);
-    alert(toMessage(e));
-  }
-}
-
-// opzionale: aggancia al bottone
-document.getElementById('payButton')?.addEventListener('click', (e) => {
-  e.preventDefault();
-  procediAlPagamento();
-});
-
-// handler globali per errori non intercettati
-window.addEventListener('error', (e) => {
-  console.error('Global JS error', e.error || e);
-  alert(`JS error: ${toMessage(e.error || e)}`);
-});
-window.addEventListener('unhandledrejection', (e) => {
-  console.error('Unhandled rejection', e.reason);
-  alert(`Promise rejection: ${toMessage(e.reason)}`);
-});
-</script>
 </body>
 </html>
