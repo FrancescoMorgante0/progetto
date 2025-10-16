@@ -322,9 +322,9 @@ app.get("/", (_, res) => res.redirect("/public/index.html"));
 
 /* ------------------------ 9) PRICE IDs (TEST) ------------------------ */
 const PRICES = {
-  "1": "price_1SGd2uFb9AZszxVCwrlU2Ooh",
-  "3": "price_1SGdGIFb9AZszxVCpQyNIX3jF",
-  "10": "price_1SGdHdFb9AZszxVCidfbEB4b",
+  "1": "price_1SIxxEJvC2sKkuzIWrlbX3L6",
+  "3": "price_1SIxyMJvC2sKkuzIekxASJtF",
+  "10": "price_1SIxz9JvC2sKkuzIwstgUdQN",
 };
 
 /* ------------------------ 10) CONFIG PUBBLICA (PK) ------------------------ */
