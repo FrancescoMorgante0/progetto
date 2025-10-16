@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>DC Calculator – Personal link</title>
+  <title>McKinsey's ecosystem game solver – Personal link</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="/public/styles.css" />
-  <!-- corrected file name (underscore) -->
+  <!-- correct file name (underscore) -->
   <script defer src="/public/js/calc_core.js"></script>
 </head>
 <body>
   <main class="container">
-    <h1>DC Calculator</h1>
+    <h1>Ecosystem Game Solver</h1>
 
     <section class="card">
       <div class="row" style="align-items:center">
@@ -26,15 +26,15 @@
         <div class="row">
           <div class="grow">
             <label>Name</label>
-            <input class="input" type="text" id="nome" placeholder="e.g. Rice" />
+            <input class="input" type="text" id="nome" placeholder="e.g. Eagle" />
           </div>
-          <div style="width:160px">
-            <label>Calories</label>
+          <div style="width:180px">
+            <label>Calories available</label>
             <input class="input" type="number" id="fondi" min="0" placeholder="120" />
             <p class="helper">If empty, it defaults to 0.</p>
           </div>
-          <div style="width:160px">
-            <label>Required</label>
+          <div style="width:180px">
+            <label>Calories needed</label>
             <input class="input" type="number" id="bisogno" min="0" placeholder="200" />
             <p class="helper">If empty, it defaults to 0.</p>
           </div>
@@ -42,11 +42,11 @@
 
         <div class="row">
           <div class="grow">
-            <label>Donors (comma‑separated)</label>
-            <input class="input" type="text" id="donatori" placeholder="Anna, Bob" />
+            <label>Donors who can feed the animal (comma‑separated)</label>
+            <input class="input" type="text" id="donatori" placeholder="Shark, Lion" />
           </div>
           <div class="grow">
-            <label>Range 1 (optional)</label>
+            <label>Range 1 (optional, e.g. temperature)</label>
             <input class="input" type="text" id="range1" placeholder="1-5 or 3" />
           </div>
           <div class="grow">
@@ -64,7 +64,7 @@
         </div>
 
         <div class="row" style="margin-top:10px">
-          <button id="btn-add" type="button" class="btn-ghost">Add item</button>
+          <button id="btn-add" type="button" class="btn">Add item</button>
           <button id="btn-clear" type="button" class="btn btn-danger">Remove all</button>
         </div>
       </form>
@@ -132,12 +132,30 @@
     }
 
     function renderTabella(){
-      elTbody.innerHTML = "";
+      // create table body lazily if missing
+      let tbody = elTbody;
+      if (!tbody) {
+        const tblSection = document.querySelector("section.card:nth-of-type(2)");
+        const table = document.createElement("table");
+        table.className = "table";
+        table.innerHTML = `
+          <thead>
+            <tr>
+              <th>Name</th><th>Calories</th><th>Required</th><th>Donors</th>
+              <th>R1</th><th>R2</th><th>R3</th><th>R4</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>`;
+        tblSection.appendChild(table);
+        tbody = document.getElementById("tbody");
+      }
+
+      tbody.innerHTML = "";
       const entries = Object.entries(elementi);
       if(entries.length===0){
         const tr=document.createElement("tr"); const td=document.createElement("td");
         td.colSpan=9; td.textContent="No items added."; td.className="helper";
-        tr.appendChild(td); elTbody.appendChild(tr); return;
+        tr.appendChild(td); tbody.appendChild(tr); return;
       }
       for(const [key,data] of entries){
         const tr=document.createElement("tr");
@@ -153,9 +171,11 @@
           <td></td>`;
         const tdAzioni=tr.lastElementChild;
         const btnDel=document.createElement("button");
-        btnDel.textContent="Remove"; btnDel.className="btn-ghost"; btnDel.onclick=()=>{ delete elementi[key]; renderTabella(); };
+        btnDel.textContent="Remove";
+        btnDel.className="btn btn-danger";
+        btnDel.onclick=()=>{ delete elementi[key]; renderTabella(); };
         tdAzioni.appendChild(btnDel);
-        elTbody.appendChild(tr);
+        tbody.appendChild(tr);
       }
     }
 
