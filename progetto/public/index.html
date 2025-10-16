@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>DC Calculator – Demo & Purchase</title>
+  <title>Mckinsey's ecosystem game solver – Demo & Purchase</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="/public/styles.css" />
   <script src="https://js.stripe.com/v3/"></script>
@@ -15,7 +15,7 @@
       <h1>DC Calculator</h1>
       <span class="badge" title="Demo does not consume attempts">Demo (k ≤ 3)</span>
     </div>
-    <p class="muted">Try the demo. If you like it, you can purchase your personal calculator link. You'll receive the link via email and your attempts will be saved persistently.</p>
+    <p class="muted">Try the demo, which ha a limit of maximum subset=3. If you like it, you can purchase the full calculator. You'll receive the link via email and your attempts will be saved persistently.You spend one attempt anytime you click "calculate"</p>
 
     <section class="grid" style="margin-top:14px">
       <!-- DEMO (k ≤ 3, does not consume) -->
@@ -26,24 +26,22 @@
           <div class="row">
             <div class="grow">
               <label>Name</label>
-              <input class="input" type="text" id="d-nome" placeholder="e.g. Rice" />
+              <input class="input" type="text" id="d-nome" placeholder="e.g. Eagle" />
             </div>
             <div style="width:160px">
-              <label>Calories</label>
+              <label>Calories available </label>
               <input class="input" type="number" id="d-fondi" min="0" placeholder="120" />
-              <p class="helper">If empty, it defaults to 0.</p>
             </div>
             <div style="width:160px">
-              <label>Required</label>
+              <label>Calories needed</label>
               <input class="input" type="number" id="d-bisogno" min="0" placeholder="200" />
-              <p class="helper">If empty, it defaults to 0.</p>
             </div>
           </div>
 
           <div class="row">
             <div class="grow">
-              <label>Donors (comma‑separated)</label>
-              <input class="input" type="text" id="d-donatori" placeholder="Anna, Bob" />
+              <label>Donors who can feed the animal (comma‑separated)</label>
+              <input class="input" type="text" id="d-donatori" placeholder="Shark, Lion" />
             </div>
             <div class="grow">
               <label>Range 1 (optional)</label>
@@ -87,13 +85,13 @@
           <button id="d-calc" type="button" class="btn">Calculate</button>
         </div>
         <pre id="d-result" class="result" style="margin-top:10px">Add some items and press Calculate.</pre>
-        <p class="helper">The demo does not consume attempts and does not require a token.</p>
+        <p class="helper">The demo does not consume attempts and does not require a specific link.</p>
       </section>
 
       <!-- PURCHASE -->
       <aside class="card">
-        <h2>Purchase the full link</h2>
-        <p class="helper">Link via email, persistent attempts, no limit on k.</p>
+        <h2>Purchase the full calcolator</h2>
+        <p class="helper">Link via email, persistent attempts, no limit on subset k.</p>
         <div class="divider"></div>
         <ul class="helper" style="list-style:none; padding:0; margin:0 0 6px">
           <li>1 attempt — €30</li>
@@ -112,7 +110,7 @@
           </select>
 
           <p class="helper" style="margin-top:6px">
-            If you have a discount code, you'll be able to enter it during checkout.
+            You have a discount code? You'll be able to enter it during checkout.
           </p>
 
           <button id="btn-buy" type="button" class="btn" style="margin-top:10px; width:100%">Proceed to payment</button>
