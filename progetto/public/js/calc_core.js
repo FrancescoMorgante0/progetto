@@ -1,5 +1,5 @@
-// Core condiviso: parsing range, vincoli, combinazioni, allocazione greedy
-// Supporta 4 range opzionali (range1..range4)
+// Shared core: range parsing, constraints, combinations, greedy allocation
+// Supports 4 optional ranges (range1..range4)
 
 function escapeHtml(str){
   return String(str)
@@ -22,16 +22,16 @@ function parseRange(input){
   const parts=s.split("-").map(p=>p.trim()).filter(Boolean);
   if(parts.length===1){
     const n=Number(parts[0]);
-    if(!Number.isInteger(n)) throw new Error(`Range non valido: "${input}"`);
+    if(!Number.isInteger(n)) throw new Error(`Invalid range: "${input}"`);
     return [n,n];
   }
   if(parts.length===2){
     let a=Number(parts[0]), b=Number(parts[1]);
-    if(!Number.isInteger(a)||!Number.isInteger(b)) throw new Error(`Range non valido: "${input}"`);
+    if(!Number.isInteger(a)||!Number.isInteger(b)) throw new Error(`Invalid range: "${input}"`);
     if(a>b) [a,b]=[b,a];
     return [a,b];
   }
-  throw new Error(`Range non valido: "${input}"`);
+  throw new Error(`Invalid range: "${input}"`);
 }
 
 function rangesCompatible(map, combo){
@@ -70,7 +70,7 @@ function soddisfaBisogni(map, sottoinsieme){
         need-=give;
       }
     }
-    if(need>0) return null;
+    if(need>0) return null; // someone still needs more -> fail
   }
   return risultato;
 }
@@ -94,7 +94,7 @@ function trovaSottoinsieme(map,k){
   return null;
 }
 
-// Espone in globale per l'uso negli script inline
+// Expose globals for inline/non-module scripts
 window.escapeHtml = escapeHtml;
 window.formatRange = formatRange;
 window.parseRange = parseRange;
