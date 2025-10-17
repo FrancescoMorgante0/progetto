@@ -88,6 +88,13 @@
           </div>
           <button id="d-calc" type="button" class="btn">Calculate</button>
         </div>
+        <!-- Barra di stato/progresso -->
+        <div id="d-progress" style="margin-top:10px; display:none;">
+          <div style="background:#e5e7eb; border-radius:8px; height:14px; width:100%; overflow:hidden;">
+            <div id="d-progress-bar" style="height:100%; width:0; background:#0ea5e9; border-radius:8px; transition:width 0.6s;"></div>
+          </div>
+          <p class="helper" style="margin:4px 0 0; font-size:13px; color:#64748b;">Calculating... Please wait.</p>
+        </div>
         <pre id="d-result" class="result" style="margin-top:10px">Add some items and press Calculate.</pre>
         <p class="helper" style="margin-top:6px">
           The demo does not consume attempts and does not require a specific link.
@@ -209,16 +216,30 @@
       const k = parseInt(document.getElementById("d-k").value,10);
       if(Number.isNaN(k) || k<1 || k>3){ alert("Set k between 1 and 3."); return; }
       const out = document.getElementById("d-result");
-      out.textContent = "Calculating...";
-      const esito = trovaSottoinsieme(D.elementi, k);
-      if(!esito){ out.textContent = "No valid subset found."; return; }
-      const { combo, risultato } = esito;
-      let txt = `Subset: ${combo.map(k=>D.elementi[k].displayName).join(", ")}\n\n--- Details ---\n`;
-      for(const [p, alloc] of Object.entries(risultato)){
-        txt += `${D.elementi[p].displayName}:\n`;
-        for(const [d, val] of alloc) txt += `  ${D.elementi[d].displayName} -> ${val}\n`;
-      }
-      out.textContent = txt;
+      const progress = document.getElementById("d-progress");
+      const progressBar = document.getElementById("d-progress-bar");
+      // Mostra barra e resetta risultato
+      out.textContent = "";
+      progress.style.display = "";
+      progressBar.style.width = "0";
+
+      // Animazione barra (finta, 1s)
+      setTimeout(() => { progressBar.style.width = "70%"; }, 80);
+      setTimeout(() => { progressBar.style.width = "100%"; }, 700);
+
+      // Simula un piccolo delay di calcolo (es. 1s), poi mostra il risultato vero
+      setTimeout(() => {
+        const esito = trovaSottoinsieme(D.elementi, k);
+        progress.style.display = "none";
+        if(!esito){ out.textContent = "No valid subset found."; return; }
+        const { combo, risultato } = esito;
+        let txt = `Subset: ${combo.map(k=>D.elementi[k].displayName).join(", ")}\n\n--- Details ---\n`;
+        for(const [p, alloc] of Object.entries(risultato)){
+          txt += `${D.elementi[p].displayName}:\n`;
+          for(const [d, val] of alloc) txt += `  ${D.elementi[d].displayName} -> ${val}\n`;
+        }
+        out.textContent = txt;
+      }, 1000); // 1 secondo di barra animata
     });
 
     renderDemoTable();
