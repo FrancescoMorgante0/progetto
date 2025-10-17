@@ -118,13 +118,18 @@ async function consumeAttempt(token) {
   const decr = await redisCommand("DECR", getAttemptsKey(token));
   let remaining = Number(decr.result);
   if (remaining < 0) {
-    await redisCommand("SET", getAttemptsKey(token), "0", "EX", String(TOKEN_TTL_SECONDS));
+    if (TOKEN_TTL_SECONDS > 0) {
+      await redisCommand("SET", getAttemptsKey(token), "0", "EX", String(TOKEN_TTL_SECONDS));
+    } else {
+      await redisCommand("SET", getAttemptsKey(token), "0");
+    }
     return { error: "Tentativi esauriti" };
   }
   if (TOKEN_TTL_SECONDS > 0) {
     await redisCommand("EXPIRE", getAttemptsKey(token), String(TOKEN_TTL_SECONDS));
     await redisCommand("EXPIRE", getMetaKey(token), String(TOKEN_TTL_SECONDS));
   }
+  // Se TTL è zero, non aggiornare la scadenza (rimane persistente)
   return { remaining };
 }
 
@@ -217,9 +222,14 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
 
         // token + TTL
         const token = uuidv4();
-        const ttl = String(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30);
-        await redisCommand("SET", `token:${token}:meta`, JSON.stringify({ email, createdAt: Date.now() }), "EX", ttl);
-        await redisCommand("SET", `token:${token}:attempts`, String(attempts), "EX", ttl);
+        const ttl = Number(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30);
+        if (ttl > 0) {
+          await redisCommand("SET", `token:${token}:meta`, JSON.stringify({ email, createdAt: Date.now() }), "EX", String(ttl));
+          await redisCommand("SET", `token:${token}:attempts`, String(attempts), "EX", String(ttl));
+        } else {
+          await redisCommand("SET", `token:${token}:meta`, JSON.stringify({ email, createdAt: Date.now() }));
+          await redisCommand("SET", `token:${token}:attempts`, String(attempts));
+        }
 
         // tracking sconti (best-effort)
         try {
@@ -256,9 +266,11 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
             to: email,
             ...(replyTo ? { replyTo } : {}),
             subject: "Il tuo link al calcolatore",
-            html: `<p>Ciao! Ecco il tuo link personale al calcolatore:</p>
+            html: `<p>Hi! This is your personal link to the solver:</p>
                    <p><a href="${link}">${link}</a></p>
-                   <p>Tentativi disponibili: <strong>${attempts}</strong></p>`,
+                   <p>Available attempts: <strong>${attempts}</strong></p>`,
+                   <p>The developers of this solver have no affiliation with McKinsey & Company.</p>
+                   <p>Use this solver in accordance with McKinsey’s policies.</p>
           });
         } catch (sendErr) {
           console.error("Errore invio email Resend:", sendErr?.message || sendErr);
