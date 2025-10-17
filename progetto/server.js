@@ -266,11 +266,9 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
             to: email,
             ...(replyTo ? { replyTo } : {}),
             subject: "Il tuo link al calcolatore",
-            html: `<p>Hi! This is your personal link to the solver:</p>
+            html: `<p>Ciao! Ecco il tuo link personale al calcolatore:</p>
                    <p><a href="${link}">${link}</a></p>
-                   <p>Available attempts: <strong>${attempts}</strong>
-                      The developers of this solver have no affiliation with McKinsey & Company.
-                      Use this solver in accordance with McKinsey’s policies.</p>
+                   <p>Tentativi disponibili: <strong>${attempts}</strong></p>`,
           });
         } catch (sendErr) {
           console.error("Errore invio email Resend:", sendErr?.message || sendErr);
