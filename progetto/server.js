@@ -265,10 +265,11 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
             from: `Ecosystem solver <${from}>`,
             to: email,
             ...(replyTo ? { replyTo } : {}),
-            subject: "Il tuo link al calcolatore",
-            html: `<p>Ciao! Ecco il tuo link personale al calcolatore:</p>
+            subject: "Link to Solver",
+            html: `<p>Hi! this is your personal link to the solver:</p>
                    <p><a href="${link}">${link}</a></p>
-                   <p>Tentativi disponibili: <strong>${attempts}</strong></p>`,
+                   <p>Tavailable attempts: <strong>${attempts}</strong>
+                      The developers of this solver have no affiliation with McKinsey & Company. Use this solver in accordance with McKinsey’s policies.</p>`,
           });
         } catch (sendErr) {
           console.error("Errore invio email Resend:", sendErr?.message || sendErr);
