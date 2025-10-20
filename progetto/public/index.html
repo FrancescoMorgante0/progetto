@@ -131,6 +131,38 @@
         </form>
       </aside>
     </section>
+    <!-- INSTRUCTIONS SECTION START -->
+    <section class="card" style="margin:32px auto 0; max-width: 800px;">
+      <h2>About the McKinsey Ecosystem Game & Solver Instructions</h2>
+      <p>
+        <strong>The McKinsey Ecosystem Game</strong> is a strategy simulation where participants manage interactions between various animals or agents in an ecosystem. Each animal has a set of needs (e.g., calories required) and resources (e.g., calories available) and may depend on other animals ("donors") to fulfill their needs. The goal is to find subsets of animals that can be sustainably matched so that everyone’s needs are met given the available resources and constraints (such as temperature, location, or other ranges).
+      </p>
+      <h3>How to Play:</h3>
+      <ul>
+        <li><strong>1. Add Items:</strong> Enter the name, calories available, calories needed, donors, and any additional range constraints for each animal or agent.</li>
+        <li><strong>2. Set Subset Size k:</strong> Choose the maximum subset size k (in the demo, k ≤ 3). In the full version, you can use a higher k for more complex analysis.</li>
+        <li><strong>3. Run Calculation:</strong> Press “Calculate” to let the solver find a valid subset and allocation for each animal. The tool will display which combinations satisfy all constraints and how resources can be distributed between donors and recipients.</li>
+        <li><strong>4. Purchase Attempts:</strong> To access the full solver (no limit on k and persistent attempts), purchase attempts. You’ll receive a personal link via email, and each calculation consumes one attempt.</li>
+      </ul>
+      <h3>How the Calculator Works:</h3>
+      <ul>
+        <li>The calculator checks all possible subsets (up to k) and tries to allocate resources so that every animal’s needs are met by donors, respecting range constraints.</li>
+        <li>If a valid subset is found, the result shows the allocation from each donor to recipient.</li>
+        <li>If no valid subset exists, you’ll see “No valid subset found”.</li>
+        <li>You can group animals manually or use the full solver to explore more complex combinations.</li>
+      </ul>
+      <h3>Tips:</h3>
+      <ul>
+        <li>Try various combinations to maximize ecosystem sustainability.</li>
+        <li>Use range constraints to model temperature, location, or other factors.</li>
+        <li>For best results, purchase multiple attempts and analyze different groupings.</li>
+      </ul>
+      <h3>Disclaimer:</h3>
+      <p>
+        This tool is an independent demo, not affiliated with McKinsey & Company. Please use in accordance with McKinsey’s policies and guidelines.
+      </p>
+    </section>
+    <!-- INSTRUCTIONS SECTION END -->
   </main>
 
   <script>
